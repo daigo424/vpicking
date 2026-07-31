@@ -24,6 +24,10 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
     """
     import omni.graph.core as og
 
+    # Ref: https://docs.isaacsim.omniverse.nvidia.com/6.0.1/migration_guides/isaac_sim_6_0/ros2_omnigraph_migration.html
+    # Isaac Sim 6.0でROS2PublishTransformTree/ROS2PublishJointStateにtargetPrim(s)を直接渡す方式が
+    # 非推奨になり、IsaacComputeTransformTree/IsaacReadJointStateが計算した値を明示的に渡す構成が
+    # 推奨されているため、その配線に従っている。
     og.Controller.edit(
         {"graph_path": "/ActionGraph", "evaluator_name": "execution"},
         {
@@ -31,18 +35,33 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
                 ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
                 ("ROS2PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
+                ("ReadJointState", "isaacsim.sensors.physics.IsaacReadJointState"),
                 ("ROS2PublishJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
                 ("ROS2SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
                 ("ArticulationController", "isaacsim.core.nodes.IsaacArticulationController"),
+                ("ComputeGtTransformTree", "isaacsim.core.nodes.IsaacComputeTransformTree"),
                 ("ROS2PublishGtTransformTree", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
                 ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("OnPlaybackTick.outputs:tick", "ROS2PublishClock.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ROS2PublishJointState.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "ReadJointState.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ROS2SubscribeJointState.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ROS2PublishGtTransformTree.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "ComputeGtTransformTree.inputs:execIn"),
+                ("ReadJointState.outputs:execOut", "ROS2PublishJointState.inputs:execIn"),
+                ("ReadJointState.outputs:jointNames", "ROS2PublishJointState.inputs:jointNames"),
+                ("ReadJointState.outputs:jointPositions", "ROS2PublishJointState.inputs:jointPositions"),
+                ("ReadJointState.outputs:jointVelocities", "ROS2PublishJointState.inputs:jointVelocities"),
+                ("ReadJointState.outputs:jointEfforts", "ROS2PublishJointState.inputs:jointEfforts"),
+                ("ReadJointState.outputs:jointDofTypes", "ROS2PublishJointState.inputs:jointDofTypes"),
+                ("ReadJointState.outputs:sensorTime", "ROS2PublishJointState.inputs:sensorTime"),
+                ("ReadJointState.outputs:stageMetersPerUnit", "ROS2PublishJointState.inputs:stageMetersPerUnit"),
+                ("ComputeGtTransformTree.outputs:execOut", "ROS2PublishGtTransformTree.inputs:execIn"),
+                ("ComputeGtTransformTree.outputs:parentFrames", "ROS2PublishGtTransformTree.inputs:parentFrames"),
+                ("ComputeGtTransformTree.outputs:childFrames", "ROS2PublishGtTransformTree.inputs:childFrames"),
+                ("ComputeGtTransformTree.outputs:translations", "ROS2PublishGtTransformTree.inputs:translations"),
+                ("ComputeGtTransformTree.outputs:orientations", "ROS2PublishGtTransformTree.inputs:orientations"),
                 ("ROS2Context.outputs:context", "ROS2PublishClock.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2PublishJointState.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2SubscribeJointState.inputs:context"),
@@ -54,11 +73,11 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("ROS2SubscribeJointState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"),
             ],
             og.Controller.Keys.SET_VALUES: [
-                ("ROS2PublishJointState.inputs:targetPrim", panda_prim_path),
+                ("ReadJointState.inputs:prim", panda_prim_path),
                 ("ArticulationController.inputs:targetPrim", panda_prim_path),
                 ("ROS2PublishJointState.inputs:topicName", "/joint_states"),
                 ("ROS2SubscribeJointState.inputs:topicName", "/joint_command"),
-                ("ROS2PublishGtTransformTree.inputs:targetPrims", [target_object_prim_path]),
+                ("ComputeGtTransformTree.inputs:targetPrims", [target_object_prim_path]),
                 ("ROS2PublishGtTransformTree.inputs:topicName", "/ground_truth/tf"),
             ],
         },
