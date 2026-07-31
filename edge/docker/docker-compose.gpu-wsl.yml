@@ -1,0 +1,19 @@
+# WSL2向けのGPUパススルー。WindowsからWSL2に渡されるのは/dev/dxg(DirectXデバイス)のみで
+# NVIDIAのネイティブOpenGL/GLXドライバは使えないため、Mesaのd3d12 Galliumドライバで
+# GL呼び出しをD3D12へ変換する(libdxcore.so/libd3d12.soは/usr/lib/wsl/libにある)。
+# これがないとcamera/LiDARのレンダリング・レイキャストがCPUソフトウェアラスタライザ(swrast)に
+# フォールバックし、gzserverのCPU消費が跳ね上がる(実測: 700〜800%)。
+services:
+  edge:
+    devices:
+      - /dev/dxg
+    environment:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib
+      # Jazzy化(Ubuntu 24.04 / Mesa 25.x)後、EGLのデバイス列挙がsoftwareのみを返し
+      # llvmpipeへフォールバックする不具合があるため、d3d12を明示指定する。
+      - GALLIUM_DRIVER=d3d12
+      - MESA_LOADER_DRIVER_OVERRIDE=d3d12
+      - __GLX_VENDOR_LIBRARY_NAME=mesa
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+      - /mnt/wslg:/mnt/wslg:rw

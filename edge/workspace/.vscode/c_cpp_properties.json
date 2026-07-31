@@ -1,0 +1,21 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/workspace/install/**",
+        "/workspace/.pixi/envs/default/include/**",
+        "/workspace/.pixi/envs/default/x86_64-conda-linux-gnu/sysroot/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/workspace/.pixi/envs/default/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

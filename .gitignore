@@ -1,0 +1,51 @@
+.venv/
+venv/
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.DS_Store
+Thumbs.db
+
+build/
+dist/
+*.egg-info/
+
+# ROS2/colcon build artifacts (e.g. edge/workspace/{install,log}/)
+install/
+log/
+*.log
+
+.*/
+!.github/
+
+.coverage
+htmlcov/
+
+# lcov/genhtmlカバレッジ生成物 (edge/workspace/.vscode/tasks.json の
+# "ROS2: Run Coverage" / "ROS2: Generate Coverage Report (Current Test Package)" が生成)
+edge/workspace/coverage/
+
+*.swp
+
+# Gazebo GUI等のクラッシュ時にOSが吐くコアダンプ(core_pattern依存でcwd直下に落ちる)
+core
+core.*
+
+tmp/
+
+.env
+
+data/*
+runs/*
+docs/**/*.bkp
+
+# edge/workspace/ で作ったドキュメントファイルは全てスルー
+edge/workspace/**/*.pdf
+edge/workspace/**/*.gv
+
+# 開発環境として必要な設定ディレクトリとファイル
+!.devcontainer
+!edge/workspace/.vscode/

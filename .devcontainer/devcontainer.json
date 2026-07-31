@@ -1,0 +1,19 @@
+{
+  "name": "vpicking",
+  "postCreateCommand": "sudo apt update -qq && sudo apt install -y --no-install-recommends lcov gdb clangd && echo 'source \"$BASH_ENV\"' >> ~/.bashrc",
+  "dockerComposeFile": "../edge/docker/docker-compose.local.yml",
+  "service": "edge",
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "llvm-vs-code-extensions.vscode-clangd", // 補完用
+        "ms-vscode.cpptools",       // C++の自動補正
+        "ms-python.python",         // Pythonの自動補正
+        "ms-iot.vscode-ros"         // ROS2公式サポート拡張
+      ]
+    }
+  }
+  // remoteUserは意図的に指定しない。Dockerfile.localがビルド時にホストUID/GIDへ
+  // 合わせて作るユーザーをUSER命令でデフォルト設定済みのため、それがそのまま使われる。
+}

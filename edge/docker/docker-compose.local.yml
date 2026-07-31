@@ -1,0 +1,47 @@
+# nameを固定しておかないと、-p未指定時にdocker composeがディレクトリ名("docker")を
+# プロジェクト名にしてしまい、container_nameが衝突する
+name: vpicking
+
+services:
+  edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      # pixi.toml/pixi.lock/srcはedge/docker配下にないため、
+      # 追加のビルドコンテキストとして渡す(context自体はedge/docker配下のまま)。
+      additional_contexts:
+        - workspace=../workspace
+      # ホストUID/GIDに合わせたユーザーでコンテナ内プロセスを動かし、
+      # 共有ボリューム配下の生成物がroot所有になるのを防ぐ(Makefileでexport)。
+      args:
+        USER_UID: ${HOST_UID:-1000}
+        USER_GID: ${HOST_GID:-1000}
+        USERNAME: ${HOST_USERNAME:-dev}
+    image: vpicking-edge:latest
+    container_name: edge_container
+    network_mode: host
+    ipc: host
+    pid: host
+    tty: true
+    cap_add:
+      - SYS_PTRACE
+    # GPUレンダリングパススルーの実体(nvidia-container-toolkit方式 or WSLg d3d12方式)は
+    # ネイティブ/WSL2で構成が異なるため、Makefileが環境判定して合成する
+    # docker-compose.gpu-native.yml / docker-compose.gpu-wsl.yml 側に分離してある。
+    environment:
+      - DISPLAY=${DISPLAY}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - PULSE_SERVER=${PULSE_SERVER}
+    volumes:
+      - ../workspace:/workspace
+      - ../../data:/data
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # ../workspaceのバインドマウントがビルド時にpixi installした
+      # /workspace/.pixiを覆い隠してしまうため、名前付きボリュームで上書きして
+      # イメージに焼き込んだ内容を初回起動時にそのまま引き継ぐ。
+      - pixi_envs:/workspace/.pixi
+    working_dir: /workspace
+
+volumes:
+  pixi_envs:

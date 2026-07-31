@@ -1,0 +1,46 @@
+FROM ghcr.io/prefix-dev/pixi:noble-cuda-12.9.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# rootのままpixi install/colcon buildすると、共有ボリューム(workspace/data)配下の
+# 生成物が全てroot所有になりホスト側で編集・削除できなくなる。イメージ標準の
+# "ubuntu"ユーザー(uid/gid 1000)をホスト側のUID/GIDに合わせて作り直して使う。
+ARG USER_UID=1000
+ARG USER_GID=1000
+ARG USERNAME=dev
+RUN groupmod -o -g ${USER_GID} ubuntu \
+    && usermod -o -u ${USER_UID} -g ${USER_GID} -l ${USERNAME} -d /home/${USERNAME} -m ubuntu \
+    && echo "${USERNAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME} \
+    && chmod 0440 /etc/sudoers.d/${USERNAME}
+
+# pixi.toml/pixi.lockはビルドコンテキスト(edge/docker)の外にあるため、
+# docker-compose.local.ymlのadditional_contextsで渡された"workspace"コンテキストから取得する。
+WORKDIR /workspace
+RUN chown ${USER_UID}:${USER_GID} /workspace
+USER ${USERNAME}
+
+# GPUパススルーはdocker-compose.gpu-*.yml側でrun/up時にのみ渡されるため、
+# `docker build`のサンドボックスにはnvidiaドライバが見えず__cudaを検出できない。
+# ARGはRUNの子プロセスには環境変数として渡るがイメージ・実行時コンテナには残らないため、
+# 「ビルド時だけ解決をモックし、実行時の本物のGPU検出は妨げない」を両立できる。
+ARG CONDA_OVERRIDE_CUDA=12.9
+
+# pixi.toml/pixi.lockだけ先にCOPYしてpixi installすることで、
+# パッケージソースの変更ではこのレイヤーのキャッシュを再利用できる。
+COPY --from=workspace --chown=${USER_UID}:${USER_GID} pixi.toml pixi.lock ./
+# BuildKitのRUNステップはデフォルトでファイルディスクリプタのソフト上限が1024しかなく、
+# isaacsimのような大量ファイルを含むパッケージのリンク処理でEMFILEになるため引き上げる。
+RUN ulimit -n 524288 && pixi install --locked
+
+COPY --from=workspace --chown=${USER_UID}:${USER_GID} src ./src
+
+# `docker compose exec`はENTRYPOINTを経由しないため、BASH_ENVで
+# 非対話bashシェルにもpixi環境を自動アクティベートさせる。
+RUN pixi shell-hook -s bash > /home/${USERNAME}/.pixi-activate.sh
+ENV BASH_ENV=/home/${USERNAME}/.pixi-activate.sh
+
+ENV TURTLEBOT3_MODEL=waffle
+ENV QT_X11_NO_MITSHM=1

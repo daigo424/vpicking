@@ -1,0 +1,105 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ROS2: Attach to Running Node",
+      "type": "cppdbg",
+      "request": "attach",
+      "program": "${workspaceFolder}/install/${input:packageName}/lib/${input:packageName}/${input:executableName}",
+      "processId": "${command:pickProcess}",
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "gdb の Pretty Printing を有効にする",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "ROS2: C++ Node Debug",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/install/${input:packageName}/lib/${input:packageName}/${input:executableName}",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "envFile": "${workspaceFolder}/.vscode/tmp/node_env.env",
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "gdb の Pretty Printing を有効にする",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "ROS2: colcon build (Debug)"
+    },
+    {
+      "name": "ROS2: Debug Current Test File",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/.vscode/tmp/current_test_binary",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "envFile": "${workspaceFolder}/.vscode/tmp/test.env",
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "gdb の Pretty Printing を有効にする",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "ROS2: Build Current Test Package (Coverage)",
+      "postDebugTask": "ROS2: Generate Coverage Report (Current Test Package)"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "packageName",
+      "type": "promptString",
+      "description": "デバッグするパッケージ名を入力してください"
+    },
+    {
+      "id": "executableName",
+      "type": "promptString",
+      "description": "実行ファイル（ノード）名を入力してください"
+    },
+    {
+        "id": "spawnId",
+        "type": "promptString",
+        "description": "生成するロボットの番号を入力してください (例: 01, 02)",
+        "default": "01"
+    },
+    {
+        "id": "rvizRobotId",
+        "type": "promptString",
+        "description": "spawn_robot.launch.pyのrobot_id (既定は01。tb3_<この値>という名前空間になる)",
+        "default": "01"
+    },
+    {
+        "id": "buildMapRobotId",
+        "type": "promptString",
+        "description": "build_map.launch.pyのrobot_id (既定はbuilder。tb3_<この値>という名前空間になる)",
+        "default": "builder"
+    },
+    {
+        "id": "xPose",
+        "type": "promptString",
+        "description": "出現位置 X 座標",
+        "default": "0.0"
+    },
+    {
+        "id": "yPose",
+        "type": "promptString",
+        "description": "出現位置 Y 座標",
+        "default": "0.0"
+    }
+  ]
+}

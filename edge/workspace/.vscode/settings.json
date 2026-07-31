@@ -1,0 +1,9 @@
+{
+    "python.analysis.extraPaths": [
+        "/workspace/.pixi/envs/default/lib/python3.12/site-packages"
+    ],
+    "python.autoComplete.extraPaths": [
+        "/workspace/.pixi/envs/default/lib/python3.12/site-packages"
+    ],
+    "coverage-gutters.coverageBaseDir": "coverage"
+}

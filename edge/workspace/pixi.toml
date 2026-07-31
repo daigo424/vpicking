@@ -1,0 +1,171 @@
+[workspace]
+name = "vision-picking-edge"
+version = "0.1.0"
+description = "Isaac Sim + ROS 2 Jazzy + MoveIt 2 Vision Picking Pipeline (single-container edge env)"
+channels = ["https://prefix.dev/robostack-jazzy", "https://prefix.dev/conda-forge"]
+platforms = ["linux-64"]
+
+[system-requirements]
+libc = "2.35"
+cuda = "12.9"
+
+[dependencies]
+ros-jazzy-desktop = ">=0.1.0"
+ros-jazzy-moveit = ">=2.12.4,<3"
+ros-jazzy-moveit-py = "*"
+ros-jazzy-moveit-resources-panda-description = "*"
+ros-jazzy-moveit-resources-panda-moveit-config = "*"
+ros-jazzy-moveit-simple-controller-manager = ">=2.12.4,<3"
+ros-jazzy-ros2-control = ">=4.43.0,<5"
+ros-jazzy-ros2-controllers = ">=4.37.0,<5"
+ros-jazzy-rmw-fastrtps-cpp = "*"
+ros-jazzy-foxglove-bridge = "*"
+ros-jazzy-tf2-ros = "*"
+ros-jazzy-tf-transformations = "*"
+opencv = ">=4.8.0"
+open3d = ">=0.18.0"
+
+# colcon buildとネイティブROS2パッケージのビルドに必要なツール類
+pkg-config = ">=0.29.2,<0.30"
+compilers = ">=1.11.0,<2"
+make = ">=4.4.1,<5"
+ninja = ">=1.13.2,<2"
+cmake = ">=4.3.2,<5"
+colcon-common-extensions = ">=0.3.0,<0.4"
+
+[pypi-options]
+extra-index-urls = ["https://pypi.nvidia.com"]
+
+# conda側で既に入っている依存とpypi resolverが混乱しないよう明示する
+# (edge/docker/Dockerfile.localのulimitコメントの通り、isaacsimはファイル数が
+# 非常に多いパッケージなので、ここで解決に失敗する場合はEMFILEも疑うこと)
+[pypi-options.dependency-overrides]
+# isaacsim[all,extscache,ros2]配下の全サブパッケージ(isaacsim-kernel/core/ros2/...)が
+# 個別にpypi依存を厳密バージョン固定しており、conda側(robostack-jazzy/conda-forge)が
+# 解決した同名パッケージのバージョンと1つでも食い違うと解決不能になる。
+# pypi.orgのrequires_distを再帰的に辿って洗い出した全依存を包括的に緩めておく。
+absl-py = "*"
+aioboto3 = "*"
+aiobotocore = "*"
+aiodns = "*"
+aiofiles = "*"
+aiohappyeyeballs = "*"
+aiohttp = "*"
+aioitertools = "*"
+aiosignal = "*"
+asteval = "*"
+async-timeout = "*"
+attrs = "*"
+awscrt = "*"
+azure-core = "*"
+azure-identity = "*"
+azure-storage-blob = "*"
+boto3 = "*"
+botocore = "*"
+cbor2 = "*"
+certifi = "*"
+charset-normalizer = "*"
+click = "*"
+coacd = "*"
+contourpy = "*"
+coverage = "*"
+cryptography = "*"
+cycler = "*"
+fastapi = "*"
+filelock = "*"
+fonttools = "*"
+frozenlist = "*"
+fsspec = "*"
+glfw = "*"
+httptools = "*"
+idna = "*"
+idna-ssl = "*"
+imageio = "*"
+imgui-bundle = "*"
+isodate = "*"
+jinja2 = "*"
+jmespath = "*"
+kiwisolver = "*"
+llvmlite = "*"
+matplotlib = "*"
+mpmath = "*"
+msal = "*"
+msal-extensions = "*"
+mujoco = "*"
+mujoco-usd-converter = "*"
+mujoco-warp = "*"
+multidict = "*"
+nest-asyncio = "*"
+networkx = "*"
+newton-actuators = "*"
+newton-usd-schemas = "*"
+numpy = "*"
+oauthlib = "*"
+opencv-python-headless = "*"
+osqp = "*"
+packaging = "*"
+pillow = "*"
+portalocker = "*"
+propcache = "*"
+psutil = "*"
+pycares = "*"
+pycollada = "*"
+pyopengl-accelerate = "*"
+pyparsing = "*"
+pyperclip = "*"
+python-dateutil = "*"
+python-multipart = "*"
+pytz = "*"
+pyyaml = "*"
+qdldl = "*"
+qrcode = "*"
+requests = "*"
+requests-oauthlib = "*"
+rtree = "*"
+s3transfer = "*"
+scipy = "*"
+sentry-sdk = "*"
+six = "*"
+sympy = "*"
+tinyobjloader = "*"
+toml = "*"
+torch = "*"
+torchaudio = "*"
+torchvision = "*"
+typing-extensions = "*"
+urdf-usd-converter = "*"
+urllib3 = "*"
+uvicorn = "*"
+watchdog = "*"
+websockets = "*"
+wrapt = "*"
+yarl = "*"
+
+[pypi-dependencies]
+# ros2バンドルでIsaac SimのROS 2連携拡張(OmniGraph ROS2ノード類)も同時に入る
+isaacsim = { version = "==6.0.1.0", extras = ["all", "extscache", "ros2"] }
+
+[activation.env]
+RMW_IMPLEMENTATION = "rmw_fastrtps_cpp"
+ROS_DOMAIN_ID = "0"
+ROS_DISTRO = "jazzy"
+# opencv/numpy/isaacsimが別々にOpenMPを静的リンクしていることがあり、
+# 重複ロードでクラッシュするのを防ぐ。
+KMP_DUPLICATE_LIB_OK = "TRUE"
+
+[target.unix.activation]
+# 初回colcon build後は install/setup.bash がactivation時に自動sourceされる。
+scripts = ["install/setup.bash", "scripts/isaacsim_env.sh"]
+
+[tasks]
+
+# ソース変更を即座に反映 (--symlink-install)
+# テストの無効化 (-DBUILD_TESTING=OFF)
+# デバッグ情報の付与 (-DCMAKE_BUILD_TYPE=Debug)
+# エディタのコード補完を有効化 (-DCMAKE_EXPORT_COMPILE_COMMANDS=ON)
+# 仮想環境の固定 (-DPython(3)_FIND_VIRTUALENV=ONLY)
+#
+build = { cmd = "colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DBUILD_TESTING=ON --no-warn-unused-cli", description = "ROS 2 workspaceをビルド" }
+clean = { cmd = "rm -rf build install log", description = "ビルド成果物を削除" }
+release-build = { cmd = "colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF", description = "ROS 2 workspaceを本番ビルド" }
+sim = { cmd = "python scripts/run_simulation.py", description = "Isaac SimをOmniGraph自動配線込みで起動" }

@@ -1,0 +1,52 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ROS2: colcon build (Debug)",
+      "type": "shell",
+      "command": "source /opt/ros/$ROS_DISTRO/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --no-warn-unused-cli && if [ -f install/setup.bash ]; then source install/setup.bash; fi && mkdir -p ${workspaceFolder}/.vscode/tmp && { echo \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\"; echo \"AMENT_PREFIX_PATH=$AMENT_PREFIX_PATH\"; echo \"PYTHONPATH=$PYTHONPATH\"; echo \"PATH=$PATH\"; echo \"CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH\"; echo \"ROS_DISTRO=$ROS_DISTRO\"; echo \"ROS_VERSION=$ROS_VERSION\"; echo \"ROS_PYTHON_VERSION=$ROS_PYTHON_VERSION\"; echo \"RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION\"; } > ${workspaceFolder}/.vscode/tmp/node_env.env",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "ROS2: Clean and Build",
+      "type": "shell",
+      "command": "rm -rf build/ install/ log/ && source /opt/ros/$ROS_DISTRO/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON --no-warn-unused-cli",
+      "group": "build",
+      "problemMatcher": ["$gcc"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "ROS2: Run Coverage",
+      "type": "shell",
+      "command": "source /opt/ros/$ROS_DISTRO/setup.bash && colcon build --cmake-args -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=\"--coverage\" -DCMAKE_C_FLAGS=\"--coverage\" --no-warn-unused-cli && colcon test && mkdir -p ${workspaceFolder}/coverage && lcov --capture --directory build/ --output-file ${workspaceFolder}/coverage/coverage.info && lcov --remove ${workspaceFolder}/coverage/coverage.info '/opt/ros/*' '/usr/*' --output-file ${workspaceFolder}/coverage/coverage.info",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "ROS2: Build Current Test Package (Coverage)",
+      "type": "shell",
+      "command": "source /opt/ros/$ROS_DISTRO/setup.bash && PKG=$(basename $(dirname ${fileDirname})) && colcon build --symlink-install --packages-select $PKG --cmake-args -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=\"--coverage\" -DCMAKE_C_FLAGS=\"--coverage\" --no-warn-unused-cli && if [ -f install/setup.bash ]; then source install/setup.bash; fi && mkdir -p ${workspaceFolder}/.vscode/tmp && cp build/$PKG/${fileBasenameNoExtension} ${workspaceFolder}/.vscode/tmp/current_test_binary && { echo \"LD_LIBRARY_PATH=$LD_LIBRARY_PATH\"; echo \"AMENT_PREFIX_PATH=$AMENT_PREFIX_PATH\"; echo \"PYTHONPATH=$PYTHONPATH\"; echo \"PATH=$PATH\"; echo \"CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH\"; echo \"ROS_DISTRO=$ROS_DISTRO\"; echo \"ROS_VERSION=$ROS_VERSION\"; echo \"ROS_PYTHON_VERSION=$ROS_PYTHON_VERSION\"; echo \"RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION\"; } > ${workspaceFolder}/.vscode/tmp/test.env",
+      "problemMatcher": ["$gcc"],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "ROS2: Send Recovery Command",
+      "type": "shell",
+      "command": "source /opt/ros/$ROS_DISTRO/setup.bash && source ${workspaceFolder}/install/setup.bash && echo 'SAFE_STOP -> MANUAL_RECOVERY' && ros2 topic pub --once /safety/recovery_command std_msgs/msg/Empty {} && sleep 1 && echo 'MANUAL_RECOVERY -> NORMAL' && ros2 topic pub --once /safety/recovery_command std_msgs/msg/Empty {}",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "ROS2: Generate Coverage Report (Current Test Package)",
+      "type": "shell",
+      "command": "PKG=$(basename $(dirname ${fileDirname})) && mkdir -p ${workspaceFolder}/coverage && lcov --capture --directory build/$PKG --output-file ${workspaceFolder}/coverage/coverage_$PKG.info && lcov --remove ${workspaceFolder}/coverage/coverage_$PKG.info '/opt/ros/*' '/usr/*' --output-file ${workspaceFolder}/coverage/coverage_$PKG.info && genhtml ${workspaceFolder}/coverage/coverage_$PKG.info --output-directory ${workspaceFolder}/coverage/html_$PKG && cp ${workspaceFolder}/coverage/coverage_$PKG.info ${workspaceFolder}/coverage/lcov.info && lcov --list ${workspaceFolder}/coverage/coverage_$PKG.info",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ]
+}
