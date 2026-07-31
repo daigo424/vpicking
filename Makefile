@@ -58,6 +58,25 @@ colcon-build-clean:
 colcon-release-build:
 	$(MAKE) colcon CMD_RUN="pixi run clean && pixi run release-build"
 
+# ROS2: デバッグコマンド
+WORLD_FRAME        := world
+FROM               ?= $(WORLD_FRAME)
+TO                 ?=
+
+topic-info-ground-truth-tf:
+	$(MAKE) colcon CMD_RUN="ros2 topic info /ground_truth/tf"
+run-tf2-ros-tf2-echo:
+ifeq ($(TO),)
+	@echo "TOが未指定です。例: make run-tf2-ros-tf2-echo FROM=world TO=target_object"
+	@exit 1
+endif
+	$(MAKE) colcon CMD_RUN="ros2 run tf2_ros tf2_echo $(FROM) $(TO)"
+
+interface-show:
+	$(MAKE) colcon CMD_RUN=" \
+		ros2 interface show tf2_msgs/msg/TFMessage \
+	"
+
 # ROS2: 各launchの起動
 sim:
 	$(MAKE) colcon CMD_RUN="pixi run sim"
