@@ -14,7 +14,14 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_action_graph(panda_prim_path: str):
+def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
+    """ROS2Context / JointState Pub-Sub / ArticulationController / 物体GT位置姿勢配線を構築する。
+
+    target_objectの真値TFは最終的な`/tf`ではなく`/ground_truth/tf`にpublishする。
+    `vision_picking`パッケージの`gt_tf_publisher_node`がこれをsubscribeして
+    world -> target_objectとして`/tf`に再publishする構成にすることで、
+    認識方式を変える場合でも`/tf`へのpublisher側を差し替えるだけで済むようにするため。
+    """
     import omni.graph.core as og
 
     og.Controller.edit(
@@ -27,15 +34,20 @@ def build_action_graph(panda_prim_path: str):
                 ("ROS2PublishJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
                 ("ROS2SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
                 ("ArticulationController", "isaacsim.core.nodes.IsaacArticulationController"),
+                ("ROS2PublishGtTransformTree", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("OnPlaybackTick.outputs:tick", "ROS2PublishClock.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ROS2PublishJointState.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ROS2SubscribeJointState.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "ROS2PublishGtTransformTree.inputs:execIn"),
                 ("ROS2Context.outputs:context", "ROS2PublishClock.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2PublishJointState.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2SubscribeJointState.inputs:context"),
+                ("ROS2Context.outputs:context", "ROS2PublishGtTransformTree.inputs:context"),
+                ("ReadSimTime.outputs:simulationTime", "ROS2PublishGtTransformTree.inputs:timeStamp"),
                 ("ROS2SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
                 ("ROS2SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
                 ("ROS2SubscribeJointState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
@@ -46,6 +58,8 @@ def build_action_graph(panda_prim_path: str):
                 ("ArticulationController.inputs:targetPrim", panda_prim_path),
                 ("ROS2PublishJointState.inputs:topicName", "/joint_states"),
                 ("ROS2SubscribeJointState.inputs:topicName", "/joint_command"),
+                ("ROS2PublishGtTransformTree.inputs:targetPrims", [target_object_prim_path]),
+                ("ROS2PublishGtTransformTree.inputs:topicName", "/ground_truth/tf"),
             ],
         },
     )
@@ -99,7 +113,7 @@ def main():
     GeomPrim(paths=target_shape.paths, apply_collision_apis=True)
     RigidPrim(paths=target_shape.paths)
 
-    build_action_graph(panda_prim_path="/World/panda")
+    build_action_graph(panda_prim_path="/World/panda", target_object_prim_path="/World/target_object")
 
     omni.timeline.get_timeline_interface().play()
     simulation_app.update()
