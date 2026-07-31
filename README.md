@@ -2,6 +2,10 @@
 
 ビジョンピッキングに関する検証プロジェクトです。
 
+| Action Graph | Isaac Sim |
+|---|---|
+| <img width="1149" height="842" alt="action-graph" src="https://github.com/user-attachments/assets/22e3b5ef-80b1-4245-9d50-b14486eabc6c" /> | <video src="https://github.com/user-attachments/assets/ec52db95-69d2-42b5-859f-4681f2eae7ae"></video> |
+
 ## 開発環境セットアップ
 
 VSCode + Dev Containers前提(C++補完・ビルド・テスト・ブレークポイントデバッグまでコンテナ内で完結)。
