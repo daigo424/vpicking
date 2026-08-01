@@ -11,6 +11,12 @@
   <depend>tf2_ros</depend>
   <depend>tf2_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>shape_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>moveit_py</depend>
+  <depend>moveit_configs_utils</depend>
+  <depend>moveit_resources_panda_moveit_config</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
