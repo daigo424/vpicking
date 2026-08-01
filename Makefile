@@ -77,6 +77,10 @@ interface-show:
 		ros2 interface show tf2_msgs/msg/TFMessage \
 	"
 
-# ROS2: 各launchの起動
+# ROS2: 各node & launchの起動
 sim:
 	$(MAKE) colcon CMD_RUN="pixi run sim"
+vp-gt-tf-publisher:
+	$(MAKE) colcon CMD_RUN="pixi run gt_tf_publisher_node"
+vp-picking-controller:
+	$(MAKE) colcon CMD_RUN="pixi run picking_controller_node"

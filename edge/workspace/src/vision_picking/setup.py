@@ -9,6 +9,7 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/config", ["config/moveit_cpp.yaml"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -20,6 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "gt_tf_publisher_node = vision_picking.gt_tf_publisher_node:main",
+            "picking_controller_node = vision_picking.picking_controller_node:main",
         ],
     },
 )
