@@ -23,7 +23,7 @@ setup(
             "gt_tf_publisher_node = vision_picking.gt_tf_publisher_node:main",
             "picking_controller_node = vision_picking.picking_controller_node:main",
             "camera_bridge_node = vision_picking.camera_bridge_node:main",
-            "pose_estimation_node = vision_picking.pose_estimation_node:main",
+            "pose_estimation_node_classical_cv = vision_picking.pose_estimation_node_classical_cv:main",
         ],
     },
 )

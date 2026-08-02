@@ -42,9 +42,9 @@ MIN_OBJECT_PIXELS = 30
 TARGET_OBJECT_SIZE_M = 0.05
 
 
-class PoseEstimationNode(Node):
+class PoseEstimationClassicalCvNode(Node):
     def __init__(self) -> None:
-        super().__init__("pose_estimation_node")
+        super().__init__("pose_estimation_node_classical_cv")
         self._bridge = CvBridge()
         self._camera_info: CameraInfo | None = None
         self._tf_buffer = Buffer()
@@ -146,7 +146,7 @@ def _transform_to_matrix(transform) -> np.ndarray:
 
 
 def main() -> None:
-    safe_spin(PoseEstimationNode)
+    safe_spin(PoseEstimationClassicalCvNode)
 
 
 if __name__ == "__main__":

@@ -172,4 +172,4 @@ sim = { cmd = "python scripts/run_simulation.py", description = "Isaac SimをOmn
 gt_tf_publisher_node = { cmd = "ros2 run vision_picking gt_tf_publisher_node", description = "target_objectの真値TFをworld -> target_objectとして/tfに配信するground truthノード" }
 picking_controller_node = { cmd = "ros2 run vision_picking picking_controller_node", description = "moveit_pyでアプローチ→下降→把持→上昇→プレイスを実行するピッキングコントローラ" }
 camera_bridge_node = { cmd = "ros2 run vision_picking camera_bridge_node", description = "Isaac Sim側の/sim_camera/*を認識ノード向けの安定したトピック名(/camera/*)へ中継する" }
-pose_estimation_node = { cmd = "ros2 run vision_picking pose_estimation_node", description = "深度点群のセグメンテーション+重心/主軸推定でtarget_objectのworld -> target_objectのTFを配信する" }
+pose_estimation_node_classical_cv = { cmd = "ros2 run vision_picking pose_estimation_node_classical_cv", description = "深度点群のセグメンテーション+重心/主軸推定でtarget_objectのworld -> target_objectのTFを配信する(古典的CV版)" }

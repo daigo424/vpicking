@@ -86,20 +86,20 @@ vp-picking-controller:
 	$(MAKE) colcon CMD_RUN="pixi run picking_controller_node"
 vp-camera-bridge:
 	$(MAKE) colcon CMD_RUN="pixi run camera_bridge_node"
-vp-pose-estimation:
-	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node"
+vp-pose-estimation-classical-cv:
+	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node_classical_cv"
 
 # ROS2: Vision Pickingの起動
 # ※ 先に`make sim`を実行してIsaac Simを起動。
 #
 # vp-run-gt: 座標をそのまま使ったピッキング
-# vp-run-cv: Depthカメラの画像から物体姿勢を推定してピッキング
+# vp-run-cv: Depthカメラの画像から物体姿勢を推定してピッキング(古典的CV版)
 vp-run-gt:
 	@$(MAKE) vp-gt-tf-publisher EXEC="$(COMPOSE) exec -T" & \
 	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/gt_tf_publisher_node" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
 vp-run-cv:
 	@$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
-	$(MAKE) vp-pose-estimation EXEC="$(COMPOSE) exec -T" & \
-	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	$(MAKE) vp-pose-estimation-classical-cv EXEC="$(COMPOSE) exec -T" & \
+	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node_classical_cv" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
