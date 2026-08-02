@@ -14,13 +14,16 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
-    """ROS2Context / JointState Pub-Sub / ArticulationController / 物体GT位置姿勢配線を構築する。
+def build_action_graph(panda_prim_path: str, target_object_prim_path: str, camera_prim_path: str):
+    """ROS2Context / JointState Pub-Sub / ArticulationController / 物体GT位置姿勢配線 / カメラ配線を構築する。
 
-    target_objectの真値TFは最終的な`/tf`ではなく`/ground_truth/tf`にpublishする。
+    target_objectとcameraの真値TFは最終的な`/tf`ではなく`/ground_truth/tf`にpublishする。
     `vision_picking`パッケージの`gt_tf_publisher_node`がこれをsubscribeして
     world -> target_objectとして`/tf`に再publishする構成にすることで、
     認識方式を変える場合でも`/tf`へのpublisher側を差し替えるだけで済むようにするため。
+    カメラ画像も同様に、OmniGraph側の実装依存のトピック名(/sim_camera/*)で一旦publishし、
+    認識ノード側が依存する安定したトピック名への変換は`vision_picking`パッケージ側の
+    ノードに委ねる。
     """
     import omni.graph.core as og
 
@@ -42,6 +45,10 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("ComputeGtTransformTree", "isaacsim.core.nodes.IsaacComputeTransformTree"),
                 ("ROS2PublishGtTransformTree", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
                 ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+                ("CreateCameraRenderProduct", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+                ("ROS2PublishCameraRgb", "isaacsim.ros2.bridge.ROS2CameraHelper"),
+                ("ROS2PublishCameraDepth", "isaacsim.ros2.bridge.ROS2CameraHelper"),
+                ("ROS2PublishCameraInfo", "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
             ],
             og.Controller.Keys.CONNECT: [
                 ("OnPlaybackTick.outputs:tick", "ROS2PublishClock.inputs:execIn"),
@@ -49,6 +56,7 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("OnPlaybackTick.outputs:tick", "ROS2SubscribeJointState.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
                 ("OnPlaybackTick.outputs:tick", "ComputeGtTransformTree.inputs:execIn"),
+                ("OnPlaybackTick.outputs:tick", "CreateCameraRenderProduct.inputs:execIn"),
                 ("ReadJointState.outputs:execOut", "ROS2PublishJointState.inputs:execIn"),
                 ("ReadJointState.outputs:jointNames", "ROS2PublishJointState.inputs:jointNames"),
                 ("ReadJointState.outputs:jointPositions", "ROS2PublishJointState.inputs:jointPositions"),
@@ -62,10 +70,19 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("ComputeGtTransformTree.outputs:childFrames", "ROS2PublishGtTransformTree.inputs:childFrames"),
                 ("ComputeGtTransformTree.outputs:translations", "ROS2PublishGtTransformTree.inputs:translations"),
                 ("ComputeGtTransformTree.outputs:orientations", "ROS2PublishGtTransformTree.inputs:orientations"),
+                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraRgb.inputs:execIn"),
+                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraDepth.inputs:execIn"),
+                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraInfo.inputs:execIn"),
+                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraRgb.inputs:renderProductPath"),
+                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraDepth.inputs:renderProductPath"),
+                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraInfo.inputs:renderProductPath"),
                 ("ROS2Context.outputs:context", "ROS2PublishClock.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2PublishJointState.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2SubscribeJointState.inputs:context"),
                 ("ROS2Context.outputs:context", "ROS2PublishGtTransformTree.inputs:context"),
+                ("ROS2Context.outputs:context", "ROS2PublishCameraRgb.inputs:context"),
+                ("ROS2Context.outputs:context", "ROS2PublishCameraDepth.inputs:context"),
+                ("ROS2Context.outputs:context", "ROS2PublishCameraInfo.inputs:context"),
                 ("ReadSimTime.outputs:simulationTime", "ROS2PublishGtTransformTree.inputs:timeStamp"),
                 ("ROS2SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
                 ("ROS2SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
@@ -77,8 +94,19 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str):
                 ("ArticulationController.inputs:targetPrim", panda_prim_path),
                 ("ROS2PublishJointState.inputs:topicName", "/joint_states"),
                 ("ROS2SubscribeJointState.inputs:topicName", "/joint_command"),
-                ("ComputeGtTransformTree.inputs:targetPrims", [target_object_prim_path]),
+                ("ComputeGtTransformTree.inputs:targetPrims", [target_object_prim_path, camera_prim_path]),
                 ("ROS2PublishGtTransformTree.inputs:topicName", "/ground_truth/tf"),
+                ("CreateCameraRenderProduct.inputs:cameraPrim", camera_prim_path),
+                ("CreateCameraRenderProduct.inputs:width", 640),
+                ("CreateCameraRenderProduct.inputs:height", 480),
+                ("ROS2PublishCameraRgb.inputs:type", "rgb"),
+                ("ROS2PublishCameraRgb.inputs:topicName", "/sim_camera/rgb"),
+                ("ROS2PublishCameraRgb.inputs:frameId", "camera"),
+                ("ROS2PublishCameraDepth.inputs:type", "depth"),
+                ("ROS2PublishCameraDepth.inputs:topicName", "/sim_camera/depth"),
+                ("ROS2PublishCameraDepth.inputs:frameId", "camera"),
+                ("ROS2PublishCameraInfo.inputs:topicName", "/sim_camera/camera_info"),
+                ("ROS2PublishCameraInfo.inputs:frameId", "camera"),
             ],
         },
     )
@@ -111,7 +139,7 @@ def main():
     import isaacsim.core.experimental.utils.stage as stage_utils
     import numpy as np
     import omni.timeline
-    from isaacsim.core.experimental.objects import Cube
+    from isaacsim.core.experimental.objects import Camera, Cube
     from isaacsim.core.experimental.prims import GeomPrim, RigidPrim
     from isaacsim.robot.experimental.manipulators.examples.franka import Franka
     from isaacsim.storage.native import get_assets_root_path
@@ -132,7 +160,19 @@ def main():
     GeomPrim(paths=target_shape.paths, apply_collision_apis=True)
     RigidPrim(paths=target_shape.paths)
 
-    build_action_graph(panda_prim_path="/World/panda", target_object_prim_path="/World/target_object")
+    # Ref: https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/reference_conventions.html
+    # Isaac Simのカメラは-Zをローカルの視線方向とする(world基準の+Zが上)ため、
+    # target_object付近の真上にorientation指定なし(=単位クォータニオン)で置くだけで真下を向く。
+    camera = Camera(paths="/World/camera", positions=np.array([[0.5, 0.0, 0.6]]))
+    # UsdGeom.Cameraのデフォルトの近クリップ面は1.0(stage単位=メートル)で、カメラ高さ0.6mより
+    # 遠いため、workspace全体(0.5〜0.6m先)が近クリップ面の内側に入ってしまい何も描画されない。
+    camera.set_clipping_ranges(near_distances=[0.01], far_distances=[10.0])
+
+    build_action_graph(
+        panda_prim_path="/World/panda",
+        target_object_prim_path="/World/target_object",
+        camera_prim_path="/World/camera",
+    )
 
     omni.timeline.get_timeline_interface().play()
     simulation_app.update()
