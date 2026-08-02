@@ -18,6 +18,8 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from tf_transformations import quaternion_from_euler, quaternion_from_matrix, quaternion_matrix
 
+from vision_picking.common import safe_spin
+
 WORLD_FRAME = "world"
 CAMERA_FRAME = "camera"
 TARGET_FRAME = "target_object"
@@ -144,13 +146,7 @@ def _transform_to_matrix(transform) -> np.ndarray:
 
 
 def main() -> None:
-    rclpy.init()
-    node = PoseEstimationNode()
-    try:
-        rclpy.spin(node)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    safe_spin(PoseEstimationNode)
 
 
 if __name__ == "__main__":

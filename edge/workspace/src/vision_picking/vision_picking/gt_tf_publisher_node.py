@@ -7,11 +7,12 @@ publishしており、最終的な/tfには直接publishしない。認識方式
 world -> target_objectを/tfに配信するノードを差し替えるだけで済むようにするため。
 """
 
-import rclpy
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster
+
+from vision_picking.common import safe_spin
 
 GROUND_TRUTH_TOPIC = "/ground_truth/tf"
 PARENT_FRAME = "world"
@@ -38,13 +39,7 @@ class GtTfPublisherNode(Node):
 
 
 def main() -> None:
-    rclpy.init()
-    node = GtTfPublisherNode()
-    try:
-        rclpy.spin(node)
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    safe_spin(GtTfPublisherNode)
 
 
 if __name__ == "__main__":
