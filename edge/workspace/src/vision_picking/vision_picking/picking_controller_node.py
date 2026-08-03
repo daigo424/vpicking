@@ -15,6 +15,7 @@ import time
 
 import rclpy
 from ament_index_python.packages import get_package_share_directory
+from common.target_object_shape import OBJECT_SIZE_M as TARGET_SIZE
 from geometry_msgs.msg import Pose, PoseStamped, Quaternion
 from moveit.planning import MoveItPy
 from moveit.utils import create_params_file_from_dict
@@ -54,7 +55,6 @@ GRIPPER_OPEN_POSITIONS = [0.035, 0.035]
 # 半径よりわずかに手前で止めることで、キューブを押し出さずに挟み込む力を残す。
 GRIPPER_CLOSED_POSITIONS = [0.01, 0.01]
 
-TARGET_SIZE = 0.05
 APPROACH_HEIGHT = 0.10
 PLACE_POSITION = (0.3, 0.3, TARGET_SIZE / 2.0)
 

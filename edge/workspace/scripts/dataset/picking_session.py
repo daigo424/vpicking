@@ -14,12 +14,14 @@ picking_controller_nodeの実動作でアームが写り込んだ実カメラ画
 
 import argparse
 import json
-import math
 import os
 
 import cv2
 import numpy as np
 import rclpy
+from common import target_object_shape as shape
+from common.camera_intrinsics import intrinsics_from_camera_info
+from common.transforms import transform_to_matrix
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
@@ -35,46 +37,9 @@ RGB_TOPIC = "/camera/rgb/image_raw"
 DEPTH_TOPIC = "/camera/depth/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera_info"
 
-OBJECT_SIZE_M = 0.05
-# 幾何学的に画角内へ投影できても、実際にはアーム自身やキューブの反対側の面に
-# 遮られて見えないkeypointが存在する(投影計算だけでは検出できない)。depth画像上の
-# 実測距離と投影計算上のzcを比較し、depth側が明らかに手前ならkeypointは遮蔽されている
-# とみなす。値はセンサーノイズ・レンダリングの量子化誤差を吸収するための余裕。
-OCCLUSION_MARGIN_M = 0.01
-_HALF = OBJECT_SIZE_M / 2.0
-# cube_only.pyと全く同じ生成順(1-indexed)。学習用重みは1つのモデルとして使い回すため、
-# キーポイントの意味(どの頂点が何番目か)を両スクリプトで揃えている。
-LOCAL_CORNERS = [
-    [sx * _HALF, sy * _HALF, sz * _HALF] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)
-]
-SKELETON = [
-    [1, 2], [1, 3], [1, 5], [2, 4], [2, 6], [3, 4],
-    [3, 7], [4, 8], [5, 6], [5, 7], [6, 8], [7, 8],
-]
-_LOCAL_CORNERS_ARR = np.array(LOCAL_CORNERS)
-
-
-def _rot_z(yaw: float) -> np.ndarray:
-    c, s = math.cos(yaw), math.sin(yaw)
-    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-
-
-def _canonicalize_corner_order(world_corners: np.ndarray, rotation: np.ndarray) -> np.ndarray:
-    # cubeは90度Z回転ごとに見た目が同じになる(4回対称)。8頂点に固定の絶対番号を
-    # 割り当てたまま学習すると、モデルは位置自体は正しく学習できても、
-    # どの角が何番目かを一貫して取り違える(番号ズレ)ことが実測で確認できている。
-    # yawの90度単位の成分をキーポイントの並び替えで吸収し、[-45,45)度に畳んだ
-    # 端数のyawだけを見た目の違いとして残すことで、番号の意味を90度対称の範囲内で
-    # 常に同じ相対的な角を指すよう揃える。
-    yaw = math.atan2(rotation[1, 0], rotation[0, 0])
-    canonical_yaw = ((yaw + math.pi / 4) % (math.pi / 2)) - math.pi / 4
-    steps = round((yaw - canonical_yaw) / (math.pi / 2))
-    rotated_by_steps = _LOCAL_CORNERS_ARR @ _rot_z(steps * math.pi / 2).T
-    perm = [
-        int(np.argmin(np.sum((rotated_by_steps - _LOCAL_CORNERS_ARR[j]) ** 2, axis=1)))
-        for j in range(8)
-    ]
-    return world_corners[perm]
+# 学習データとして使うには、visible=2(遮蔽なし・画角内)の頂点が最低これだけ必要。
+# 画角内に十分な頂点が写っていないフレーム(アームに完全遮蔽・画角外)は記録しない。
+MIN_VISIBLE_CORNERS = 4
 
 
 def parse_args():
@@ -84,14 +49,6 @@ def parse_args():
     parser.add_argument("--min-interval-sec", type=float, default=0.15, help="フレーム間の最小記録間隔")
     parser.add_argument("--start-index", type=int, default=0, help="ファイル名の開始インデックス")
     return parser.parse_args()
-
-
-def _transform_to_matrix(translation, rotation) -> np.ndarray:
-    mat = quaternion_matrix([rotation.x, rotation.y, rotation.z, rotation.w])
-    mat[0, 3] = translation.x
-    mat[1, 3] = translation.y
-    mat[2, 3] = translation.z
-    return mat
 
 
 class RecorderNode(Node):
@@ -162,64 +119,29 @@ class RecorderNode(Node):
             raise SystemExit(0)
 
     def _write_label(self, frame_name, object_transform, camera_transform) -> bool:
-        fx, fy = self._camera_info.k[0], self._camera_info.k[4]
-        cx, cy = self._camera_info.k[2], self._camera_info.k[5]
+        fx, fy, cx, cy = intrinsics_from_camera_info(self._camera_info)
         width, height = self._camera_info.width, self._camera_info.height
-        depth_image = self._depth_image
 
-        world_to_camera_mat = _transform_to_matrix(camera_transform.translation, camera_transform.rotation)
+        world_to_camera_mat = transform_to_matrix(camera_transform)
         camera_to_world_mat = np.linalg.inv(world_to_camera_mat)
 
         rotation = quaternion_matrix(
             [object_transform.rotation.x, object_transform.rotation.y, object_transform.rotation.z, object_transform.rotation.w]
         )[:3, :3]
         position = np.array([object_transform.translation.x, object_transform.translation.y, object_transform.translation.z])
-        world_corners = np.array(LOCAL_CORNERS) @ rotation.T + position
-        world_corners = _canonicalize_corner_order(world_corners, rotation)
+        world_corners = np.array(shape.LOCAL_CORNERS) @ rotation.T + position
+        world_corners = shape.canonicalize_corner_order(world_corners, rotation, np)
 
-        us, vs, visible = [], [], []
-        for corner in world_corners:
-            point_camera = camera_to_world_mat @ np.array([corner[0], corner[1], corner[2], 1.0])
-            xc, yc, zc = point_camera[:3]
-            if zc <= 0:
-                us.append(0.0)
-                vs.append(0.0)
-                visible.append(0)
-                continue
-            u = cx + fx * xc / zc
-            v = cy + fy * yc / zc
-            in_bounds = 0 <= u < width and 0 <= v < height
-            us.append(min(max(u, 0.0), width - 1))
-            vs.append(min(max(v, 0.0), height - 1))
-            if not in_bounds:
-                visible.append(1)
-                continue
-            row = min(max(int(round(v)), 0), height - 1)
-            col = min(max(int(round(u)), 0), width - 1)
-            surface_depth = depth_image[row, col]
-            occluded = np.isfinite(surface_depth) and surface_depth < zc - OCCLUSION_MARGIN_M
-            visible.append(1 if occluded else 2)
+        corners_homogeneous = np.concatenate([world_corners, np.ones((8, 1))], axis=1)
+        camera_points = (corners_homogeneous @ camera_to_world_mat.T)[:, :3]
+        us, vs, visible = shape.project_with_occlusion(
+            camera_points, fx, fy, cx, cy, width, height, self._depth_image, np
+        )
 
-        us_arr, vs_arr = np.array(us), np.array(vs)
-        visible_corners = [i for i, flag in enumerate(visible) if flag > 0]
-        # 画角内に十分な頂点が写っていないフレーム(アームに完全遮蔽・画角外)は
-        # 学習データとして使えないため記録しない。
-        if len([i for i in visible_corners if visible[i] == 2]) < 4:
+        if sum(1 for flag in visible if flag == 2) < MIN_VISIBLE_CORNERS:
             return False
 
-        x_min, x_max = us_arr[visible_corners].min(), us_arr[visible_corners].max()
-        y_min, y_max = vs_arr[visible_corners].min(), vs_arr[visible_corners].max()
-        x_center = (x_min + x_max) / 2.0 / width
-        y_center = (y_min + y_max) / 2.0 / height
-        bbox_w = (x_max - x_min) / width
-        bbox_h = (y_max - y_min) / height
-
-        fields = [0, x_center, y_center, bbox_w, bbox_h]
-        for u, v, flag in zip(us, vs, visible):
-            fields += [u / width, v / height, flag]
-
-        with open(os.path.join(self._labels_dir, f"{frame_name}.txt"), "w") as f:
-            f.write(" ".join(f"{v:.6f}" if isinstance(v, float) else str(v) for v in fields) + "\n")
+        shape.write_pose_label(os.path.join(self._labels_dir, f"{frame_name}.txt"), us, vs, visible, width, height, np)
         return True
 
     def _append_pose_gt(self, entry: dict) -> None:
@@ -234,20 +156,12 @@ class RecorderNode(Node):
         keypoints_path = os.path.join(self._args.output_dir, "object_3d_keypoints.json")
         if not os.path.exists(keypoints_path):
             with open(keypoints_path, "w") as f:
-                json.dump({"class": "target_object", "keypoints_local_xyz": LOCAL_CORNERS}, f, indent=2)
+                json.dump({"class": "target_object", "keypoints_local_xyz": shape.LOCAL_CORNERS}, f, indent=2)
 
         yaml_path = os.path.join(self._args.output_dir, "dataset.yaml")
         if not os.path.exists(yaml_path):
             with open(yaml_path, "w") as f:
-                f.write(
-                    f"path: {os.path.abspath(self._args.output_dir)}\n"
-                    "train: images\n"
-                    "val: images\n"
-                    "names:\n"
-                    "  0: target_object\n"
-                    "kpt_shape: [8, 3]\n"
-                    "skeleton:\n" + "".join(f"  - {edge}\n" for edge in SKELETON)
-                )
+                f.write(shape.dataset_yaml_content(os.path.abspath(self._args.output_dir)))
 
 
 def main() -> None:

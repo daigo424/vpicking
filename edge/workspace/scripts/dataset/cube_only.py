@@ -12,19 +12,11 @@ SimulationAppはisaacsim配下の他モジュールをimportする前に必ず�
 """
 
 import argparse
-import math
 import os
 
+from common import target_object_shape as shape
 
-def parse_args():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--headless", action="store_true", help="GUIを表示せずに起動する")
-    parser.add_argument("--num-frames", type=int, default=50, help="生成するフレーム数")
-    parser.add_argument("--output-dir", default="/data/dataset", help="出力先ディレクトリ")
-    return parser.parse_args()
-
-
-OBJECT_SIZE_M = 0.05
+OBJECT_SIZE_M = shape.OBJECT_SIZE_M
 IMAGE_WIDTH = 640
 IMAGE_HEIGHT = 480
 
@@ -35,52 +27,18 @@ IMAGE_HEIGHT = 480
 SPAWN_X_RANGE = (0.388, 0.612)
 SPAWN_Y_RANGE = (-0.073, 0.073)
 
-# 直方体(立方体)の8頂点をオブジェクトローカル座標で定義する。同一平面上にない8点なので、
-# 後続のPnP計算(cv2.solvePnP)で奥行き反転の曖昧性が出にくい構成になる。
-_HALF = OBJECT_SIZE_M / 2.0
-LOCAL_CORNERS = [
-    [sx * _HALF, sy * _HALF, sz * _HALF] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)
-]
-# 幾何学的に画角内へ投影できても、真上のカメラからだとキューブ自身の胴体に遮られて
-# 実際には見えない下面側のkeypointが存在する(投影計算だけでは検出できない)。depth画像上の
-# 実測距離と投影計算上のzcを比較し、depth側が明らかに手前ならkeypointは遮蔽されている
-# とみなす。値はセンサーノイズ・レンダリングの量子化誤差を吸収するための余裕。
-OCCLUSION_MARGIN_M = 0.01
-# 上のLOCAL_CORNERSの生成順(1-indexed)に対応する、立方体の辺(12本)の接続関係。
-# Ultralytics pose学習のdataset.yamlでスケルトン可視化に使う。
-SKELETON = [
-    [1, 2], [1, 3], [1, 5], [2, 4], [2, 6], [3, 4],
-    [3, 7], [4, 8], [5, 6], [5, 7], [6, 8], [7, 8],
-]
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--headless", action="store_true", help="GUIを表示せずに起動する")
+    parser.add_argument("--num-frames", type=int, default=50, help="生成するフレーム数")
+    parser.add_argument("--output-dir", default="/data/dataset", help="出力先ディレクトリ")
+    return parser.parse_args()
 
 
 def _quat_wxyz_from_yaw(yaw: float, np) -> list:
     half = yaw / 2.0
     return [float(np.cos(half)), 0.0, 0.0, float(np.sin(half))]
-
-
-def _rot_z(yaw: float, np):
-    c, s = math.cos(yaw), math.sin(yaw)
-    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
-
-
-def _canonicalize_corner_order(world_corners, rotation, np):
-    # cubeは90度Z回転ごとに見た目が同じになる(4回対称)。8頂点に固定の絶対番号を
-    # 割り当てたまま学習すると、モデルは位置自体は正しく学習できても、
-    # どの角が何番目かを一貫して取り違える(番号ズレ)ことが実測で確認できている。
-    # yawの90度単位の成分をキーポイントの並び替えで吸収し、[-45,45)度に畳んだ
-    # 端数のyawだけを見た目の違いとして残すことで、番号の意味を90度対称の範囲内で
-    # 常に同じ相対的な角を指すよう揃える。
-    local_corners_arr = np.array(LOCAL_CORNERS)
-    yaw = math.atan2(rotation[1, 0], rotation[0, 0])
-    canonical_yaw = ((yaw + math.pi / 4) % (math.pi / 2)) - math.pi / 4
-    steps = round((yaw - canonical_yaw) / (math.pi / 2))
-    rotated_by_steps = local_corners_arr @ _rot_z(steps * math.pi / 2, np).T
-    perm = [
-        int(np.argmin(np.sum((rotated_by_steps - local_corners_arr[j]) ** 2, axis=1)))
-        for j in range(8)
-    ]
-    return world_corners[perm]
 
 
 def _quat_wxyz_to_matrix(q, np):
@@ -156,18 +114,10 @@ def main():
     os.makedirs(labels_dir, exist_ok=True)
 
     with open(os.path.join(args.output_dir, "object_3d_keypoints.json"), "w") as f:
-        json.dump({"class": "target_object", "keypoints_local_xyz": LOCAL_CORNERS}, f, indent=2)
+        json.dump({"class": "target_object", "keypoints_local_xyz": shape.LOCAL_CORNERS}, f, indent=2)
 
     with open(os.path.join(args.output_dir, "dataset.yaml"), "w") as f:
-        f.write(
-            f"path: {os.path.abspath(args.output_dir)}\n"
-            "train: images\n"
-            "val: images\n"
-            "names:\n"
-            "  0: target_object\n"
-            "kpt_shape: [8, 3]\n"
-            "skeleton:\n" + "".join(f"  - {edge}\n" for edge in SKELETON)
-        )
+        f.write(shape.dataset_yaml_content(os.path.abspath(args.output_dir)))
 
     rng = np.random.default_rng()
     pose_gt = []
@@ -246,57 +196,21 @@ def _write_pose_label(*, frame_name, labels_dir, position, orientation_wxyz, cam
     cy = height / 2.0
 
     rotation = _quat_wxyz_to_matrix(orientation_wxyz, np)
-    world_corners = np.array(LOCAL_CORNERS) @ rotation.T + position
-    world_corners = _canonicalize_corner_order(world_corners, rotation, np)
+    world_corners = np.array(shape.LOCAL_CORNERS) @ rotation.T + position
+    world_corners = shape.canonicalize_corner_order(world_corners, rotation, np)
 
-    us, vs, visible = [], [], []
-    for corner in world_corners:
-        point_world_row = np.array([corner[0], corner[1], corner[2], 1.0])
-        point_camera_usd = point_world_row @ view_transform
-        # USDカメラ座標系(+Y上,-Z前方)からROS/pinhole慣例(+Y下,+Z前方)への変換は
-        # ローカルX軸まわり180度回転(Y,Zの符号反転)に等しい。
-        xc = point_camera_usd[0]
-        yc = -point_camera_usd[1]
-        zc = -point_camera_usd[2]
-        if zc <= 0:
-            us.append(0.0)
-            vs.append(0.0)
-            visible.append(0)
-            continue
-        u = cx + fx * xc / zc
-        v = cy + fy * yc / zc
-        in_bounds = 0 <= u < width and 0 <= v < height
-        # Ultralyticsのラベルローダーは正規化座標が[0,1]を外れると
-        # ラベルファイル全体を「破損」扱いにして学習から除外するため、
-        # 画角外に出た点は画像端にクランプする(可視性フラグでクランプ前の状態を区別する)。
-        us.append(min(max(u, 0.0), width - 1))
-        vs.append(min(max(v, 0.0), height - 1))
-        if not in_bounds:
-            visible.append(1)
-            continue
-        row = min(max(int(round(v)), 0), height - 1)
-        col = min(max(int(round(u)), 0), width - 1)
-        surface_depth = depth[row, col]
-        occluded = np.isfinite(surface_depth) and surface_depth < zc - OCCLUSION_MARGIN_M
-        visible.append(1 if occluded else 2)
+    # USDカメラ座標系(+Y上,-Z前方)からROS/pinhole慣例(+Y下,+Z前方)への変換は
+    # ローカルX軸まわり180度回転(Y,Zの符号反転)に等しい。
+    corners_homogeneous = np.concatenate([world_corners, np.ones((8, 1))], axis=1)
+    points_camera_usd = corners_homogeneous @ view_transform
+    camera_points = np.stack(
+        [points_camera_usd[:, 0], -points_camera_usd[:, 1], -points_camera_usd[:, 2]], axis=1
+    )
 
-    us_arr, vs_arr = np.array(us), np.array(vs)
-    visible_corners = [i for i, flag in enumerate(visible) if flag > 0]
-    if not visible_corners:
+    us, vs, visible = shape.project_with_occlusion(camera_points, fx, fy, cx, cy, width, height, depth, np)
+    if not any(flag > 0 for flag in visible):
         return
-    x_min, x_max = us_arr[visible_corners].min(), us_arr[visible_corners].max()
-    y_min, y_max = vs_arr[visible_corners].min(), vs_arr[visible_corners].max()
-    x_center = (x_min + x_max) / 2.0 / width
-    y_center = (y_min + y_max) / 2.0 / height
-    bbox_w = (x_max - x_min) / width
-    bbox_h = (y_max - y_min) / height
-
-    fields = [0, x_center, y_center, bbox_w, bbox_h]
-    for u, v, flag in zip(us, vs, visible):
-        fields += [u / width, v / height, flag]
-
-    with open(os.path.join(labels_dir, f"{frame_name}.txt"), "w") as f:
-        f.write(" ".join(f"{v:.6f}" if isinstance(v, float) else str(v) for v in fields) + "\n")
+    shape.write_pose_label(os.path.join(labels_dir, f"{frame_name}.txt"), us, vs, visible, width, height, np)
 
 
 if __name__ == "__main__":
