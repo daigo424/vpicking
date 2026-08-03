@@ -24,9 +24,10 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import ConnectivityException, ExtrapolationException, LookupException, TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf_transformations import quaternion_from_matrix, quaternion_matrix
+from tf_transformations import quaternion_from_matrix
 from ultralytics import YOLO
 
+from common.transforms import transform_to_matrix
 from vision_picking.common import safe_spin
 
 WORLD_FRAME = "world"
@@ -146,7 +147,7 @@ class PoseEstimationNode(Node):
             self.get_logger().info(f"{CAMERA_FRAME}のTFを待機中...")
             return
 
-        world_to_object_mat = _transform_to_matrix(world_to_camera.transform) @ object_to_camera
+        world_to_object_mat = transform_to_matrix(world_to_camera.transform) @ object_to_camera
         translation = world_to_object_mat[:3, 3]
         if abs(float(translation[2]) - EXPECTED_OBJECT_Z_M) > MAX_Z_ERROR_M:
             self.get_logger().info(
@@ -185,14 +186,6 @@ class PoseEstimationNode(Node):
         out.transform.rotation.z = qz
         out.transform.rotation.w = qw
         self._broadcaster.sendTransform(out)
-
-
-def _transform_to_matrix(transform) -> np.ndarray:
-    mat = quaternion_matrix([transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w])
-    mat[0, 3] = transform.translation.x
-    mat[1, 3] = transform.translation.y
-    mat[2, 3] = transform.translation.z
-    return mat
 
 
 def main() -> None:

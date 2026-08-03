@@ -1,25 +1,13 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>vision_picking</name>
+  <name>common</name>
   <version>0.1.0</version>
-  <description>Isaac Sim + ROS 2 + MoveIt 2によるビジョンピッキングの認識・制御ノード群</description>
+  <description>vision_pickingパッケージのROS2ノードと、colcon管理外のscripts/配下のツールの両方から使う共通処理</description>
   <maintainer email="noreply@example.com">vpicking</maintainer>
   <license>Apache-2.0</license>
 
-  <depend>rclpy</depend>
-  <depend>tf2_ros</depend>
-  <depend>tf2_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>shape_msgs</depend>
-  <depend>moveit_msgs</depend>
-  <depend>moveit_py</depend>
-  <depend>moveit_configs_utils</depend>
-  <depend>moveit_resources_panda_moveit_config</depend>
-  <depend>cv_bridge</depend>
   <depend>tf_transformations</depend>
-  <depend>common</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

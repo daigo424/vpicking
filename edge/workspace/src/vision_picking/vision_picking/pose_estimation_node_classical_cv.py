@@ -16,8 +16,11 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import ConnectivityException, ExtrapolationException, LookupException, TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf_transformations import quaternion_from_euler, quaternion_from_matrix, quaternion_matrix
+from tf_transformations import quaternion_from_euler, quaternion_from_matrix
 
+from common.camera_intrinsics import intrinsics_from_camera_info
+from common.target_object_shape import OBJECT_SIZE_M as TARGET_OBJECT_SIZE_M
+from common.transforms import transform_to_matrix
 from vision_picking.common import safe_spin
 
 WORLD_FRAME = "world"
@@ -34,12 +37,6 @@ CAMERA_INFO_TOPIC = "/camera/camera_info"
 DEPTH_MARGIN_MIN_M = 0.02
 DEPTH_MARGIN_MAX_M = 0.10
 MIN_OBJECT_PIXELS = 30
-
-# 深度カメラは物体の上面しか観測できないが、
-# picking_controller_nodeはtarget_objectのフレーム原点を物体の重心として掴みに行く高さを計算している。
-# 上面の重心をそのまま使うと指が物体の上端しか捉えられず把持に失敗するため、
-# 既知の物体サイズの半分だけ下げて重心相当の高さに補正する。
-TARGET_OBJECT_SIZE_M = 0.05
 
 
 class PoseEstimationClassicalCvNode(Node):
@@ -62,8 +59,7 @@ class PoseEstimationClassicalCvNode(Node):
             return
 
         depth = self._bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
-        fx, fy = self._camera_info.k[0], self._camera_info.k[4]
-        cx, cy = self._camera_info.k[2], self._camera_info.k[5]
+        fx, fy, cx, cy = intrinsics_from_camera_info(self._camera_info)
 
         valid = np.isfinite(depth) & (depth > 0.0)
         if not np.any(valid):
@@ -116,7 +112,7 @@ class PoseEstimationClassicalCvNode(Node):
             self.get_logger().info(f"{CAMERA_FRAME}のTFを待機中...")
             return
 
-        world_to_object_mat = _transform_to_matrix(world_to_camera.transform) @ _transform_to_matrix(
+        world_to_object_mat = transform_to_matrix(world_to_camera.transform) @ transform_to_matrix(
             pose_camera.transform
         )
         translation = world_to_object_mat[:3, 3]
@@ -128,20 +124,16 @@ class PoseEstimationClassicalCvNode(Node):
         out.child_frame_id = TARGET_FRAME
         out.transform.translation.x = float(translation[0])
         out.transform.translation.y = float(translation[1])
+        # 深度カメラは物体の上面しか観測できないが、picking_controller_nodeはtarget_objectの
+        # フレーム原点を物体の重心として掴みに行く高さを計算している。上面の重心をそのまま
+        # 使うと指が物体の上端しか捉えられず把持に失敗するため、物体サイズの半分だけ
+        # 下げて重心相当の高さに補正する。
         out.transform.translation.z = float(translation[2]) - TARGET_OBJECT_SIZE_M / 2.0
         out.transform.rotation.x = qx
         out.transform.rotation.y = qy
         out.transform.rotation.z = qz
         out.transform.rotation.w = qw
         self._broadcaster.sendTransform(out)
-
-
-def _transform_to_matrix(transform) -> np.ndarray:
-    mat = quaternion_matrix([transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w])
-    mat[0, 3] = transform.translation.x
-    mat[1, 3] = transform.translation.y
-    mat[2, 3] = transform.translation.z
-    return mat
 
 
 def main() -> None:
