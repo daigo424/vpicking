@@ -42,6 +42,15 @@ data/*
 runs/*
 docs/**/*.bkp
 
+# 学習のたびに結果が変わる都合上、動作確認済みのモデル重み・キーポイント定義だけは
+# バージョンディレクトリ単位(data/models/<VER>/)で再現性のためgit管理下に置く。
+!data/models/
+
+# YOLOの学習成果物・自動ダウンロードされる事前学習済み重み
+# (train_yolo_pose.pyが/workspace=edge/workspace直下に生成・取得する)
+edge/workspace/runs/
+edge/workspace/*.pt
+
 # edge/workspace/ で作ったドキュメントファイルは全てスルー
 edge/workspace/**/*.pdf
 edge/workspace/**/*.gv

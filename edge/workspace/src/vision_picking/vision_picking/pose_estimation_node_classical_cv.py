@@ -26,17 +26,17 @@ TARGET_FRAME = "target_object"
 DEPTH_TOPIC = "/camera/depth/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera_info"
 
-# target_objectは5cm角のcubeで、カメラは真上から見下ろしている。テーブル面はカメラの
-# 深度画像の大部分を占めるため、中央値をテーブル面の深度とみなす。カメラの視野には
-# Pandaアーム自体も入り込むため、「テーブルより近ければ物体」という単純な閾値だと
-# テーブルより遥かに手前にあるアームを物体として誤検出する。物体の高さ(5cm角)を
-# 上回らない範囲に上限も設けて、テーブル直上の薄い depth の層だけを物体とみなす。
+# target_objectは5cm角のcubeで、カメラは真上から見下ろしている。
+# テーブル面はカメラの深度画像の大部分を占めるため、中央値をテーブル面の深度とみなす。
+# カメラの視野にはPandaアーム自体も入り込むため、
+# 「テーブルより近ければ物体」という単純な閾値だとテーブルより遥かに手前にあるアームを物体として誤検出する。
+# 物体の高さ(5cm角)を上回らない範囲に上限も設けて、テーブル直上の薄い depth の層だけを物体とみなす。
 DEPTH_MARGIN_MIN_M = 0.02
 DEPTH_MARGIN_MAX_M = 0.10
 MIN_OBJECT_PIXELS = 30
 
-# 深度カメラは物体の上面しか観測できないが、picking_controller_nodeはtarget_objectの
-# フレーム原点を物体の重心として掴みに行く高さを計算している。
+# 深度カメラは物体の上面しか観測できないが、
+# picking_controller_nodeはtarget_objectのフレーム原点を物体の重心として掴みに行く高さを計算している。
 # 上面の重心をそのまま使うと指が物体の上端しか捉えられず把持に失敗するため、
 # 既知の物体サイズの半分だけ下げて重心相当の高さに補正する。
 TARGET_OBJECT_SIZE_M = 0.05
@@ -80,17 +80,16 @@ class PoseEstimationClassicalCvNode(Node):
         vs, us = np.nonzero(object_mask)
         zs = depth[vs, us]
         # Ref: https://docs.isaacsim.omniverse.nvidia.com/6.0.1/reference_material/reference_conventions.html
-        # 「ROS 2へpublishされるカメラ関連のデータ(姿勢のTF含む)はROS軸(X右, Y下, Z前方)で
-        # 表現される」とIsaac Simのドキュメントが明記しているため、cameraフレームに対して
-        # 通常のpinholeモデルの変換式(X=(u-cx)Z/fx, Y=(v-cy)Z/fy, Z=depth)をそのまま使える。
+        # 「ROS 2へpublishされるカメラ関連のデータ(姿勢のTF含む)はROS軸(X右, Y下, Z前方)で表現される」と
+        # Isaac Simのドキュメントが明記しているため、
+        # cameraフレームに対して通常のpinholeモデルの変換式(X=(u-cx)Z/fx, Y=(v-cy)Z/fy, Z=depth)をそのまま使える。
         xs = (us - cx) * zs / fx
         ys = (vs - cy) * zs / fy
         points_camera = np.stack([xs, ys, zs], axis=1)
         centroid_camera = points_camera.mean(axis=0)
 
         # 主軸(PCA): target_objectは正方形のcubeで主軸自体に強い意味はないが、
-        # 「深度点群のセグメンテーション+重心+主軸推定」という認識方式そのものを
-        # 実証するために計算する。
+        # 「深度点群のセグメンテーション+重心+主軸推定」という認識方式そのものを実証するために計算する。
         centered_xy = points_camera[:, :2] - centroid_camera[:2]
         eigvals, eigvecs = np.linalg.eigh(np.cov(centered_xy.T))
         principal_axis = eigvecs[:, np.argmax(eigvals)]

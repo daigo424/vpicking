@@ -9,6 +9,7 @@ Isaac Sim側に存在せず、run_simulation.pyのOmniGraphは/joint_command(sen
 簡易的なtrajectoryプレイヤーを実装している。
 """
 
+import math
 import threading
 import time
 
@@ -22,9 +23,23 @@ from moveit_msgs.msg import AttachedCollisionObject, CollisionObject
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
+from tf2_msgs.msg import TFMessage
 from tf2_ros import ConnectivityException, ExtrapolationException, LookupException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from tf_transformations import euler_from_quaternion
+
+GROUND_TRUTH_TF_TOPIC = "/ground_truth/tf"
+# 把持が失敗していても_attach_target()はMoveItの計画上のアタッチを無条件に成功させてしまい、
+# 実際にIsaac Sim側の物理シミュレーションで物体を運べたかどうかとは無関係に
+# 「ピック&プレイス完了」まで到達してしまう。run_simulation.pyが常時配信する
+# /ground_truth/tf(認識方式によらない物理的な真の位置)でプレイス後の実際の位置を検証し、
+# ログ上の完了と物理的な成否を区別できるようにする。
+GRASP_SUCCESS_XY_TOLERANCE_M = 0.05
+# 上昇後、target_objectがこの高さ以上持ち上がっていなければ把持失敗とみなす
+# (APPROACH_HEIGHT=0.10の半分。指の間からすり抜けて一度も持ち上がらないまま
+# プレイスへ向かってしまう問題を、プレイス降下・リリースの前に検出するため)。
+MIN_LIFT_HEIGHT_M = 0.05
 
 WORLD_FRAME = "world"
 TARGET_FRAME = "target_object"
@@ -33,7 +48,11 @@ END_EFFECTOR_LINK = "panda_link8"
 JOINT_COMMAND_TOPIC = "/joint_command"
 GRIPPER_JOINT_NAMES = ["panda_finger_joint1", "panda_finger_joint2"]
 GRIPPER_OPEN_POSITIONS = [0.035, 0.035]
-GRIPPER_CLOSED_POSITIONS = [0.0, 0.0]
+# target_objectの半径(TARGET_SIZE/2=0.025m)より深く閉じる指令にすると、位置制御の
+# フィンガーが軽量なキューブを弾き飛ばして指の間から押し出し、何も挟まないまま
+# 0まで閉じきってしまう(/joint_statesの実測値で接触・押し出しの挙動を確認済み)。
+# 半径よりわずかに手前で止めることで、キューブを押し出さずに挟み込む力を残す。
+GRIPPER_CLOSED_POSITIONS = [0.01, 0.01]
 
 TARGET_SIZE = 0.05
 APPROACH_HEIGHT = 0.10
@@ -50,12 +69,27 @@ DOWNWARD_ORIENTATION = Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
 FLANGE_TO_FINGERTIP_Z = 0.1034
 
 
+def _grasp_orientation_for_yaw(rotation: Quaternion) -> Quaternion:
+    # DOWNWARD_ORIENTATION固定のまま把持すると、target_objectが回転している場合に
+    # 指がcubeの面ではなく角や斜めの位置に当たってしまい、掴み損ねる。
+    # target_objectは正方形の断面を持つcubeで90度ごとに同じ形状が繰り返されるため、
+    # yawを90度周期で畳み込んで最小回転で面に軸を合わせる。
+    # panda_hand_joint(panda.urdf)がEND_EFFECTOR_LINK(panda_link8)に対して
+    # rpy z=-0.785398(-45度)の固定回転を持つため、畳み込みの位相を45度分ずらして
+    # 実際の指の開閉軸(panda_hand基準)がcubeの面に対して直角に合うようにしている。
+    _, _, yaw = euler_from_quaternion([rotation.x, rotation.y, rotation.z, rotation.w])
+    yaw_mod = (yaw % (math.pi / 2)) - math.pi / 4
+    return Quaternion(x=math.cos(yaw_mod / 2.0), y=math.sin(yaw_mod / 2.0), z=0.0, w=0.0)
+
+
 class PickingControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("picking_controller_node")
         self._joint_command_pub = self.create_publisher(JointState, JOINT_COMMAND_TOPIC, 10)
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
+        self._ground_truth_target_pose: Pose | None = None
+        self.create_subscription(TFMessage, GROUND_TRUTH_TF_TOPIC, self._on_ground_truth_tf, 10)
 
         # Ref: https://github.com/moveit/moveit2/issues/2409#issuecomment-1753090620
         # moveit_resources_panda_moveit_configにはmoveit_cpp.yamlが同梱されておらず、
@@ -93,6 +127,55 @@ class PickingControllerNode(Node):
         self._arm = self.moveit_py.get_planning_component(ARM_GROUP)
         self._psm = self.moveit_py.get_planning_scene_monitor()
 
+    def _on_ground_truth_tf(self, msg: TFMessage) -> None:
+        for transform in msg.transforms:
+            if transform.child_frame_id == TARGET_FRAME:
+                pose = Pose()
+                pose.position.x = transform.transform.translation.x
+                pose.position.y = transform.transform.translation.y
+                pose.position.z = transform.transform.translation.z
+                pose.orientation = transform.transform.rotation
+                self._ground_truth_target_pose = pose
+
+    def _verify_grasped(self, pick_z: float) -> None:
+        if self._ground_truth_target_pose is None:
+            raise RuntimeError(f"{GROUND_TRUTH_TF_TOPIC}を一度も受信できておらず、把持できたか検証できません")
+        z = self._ground_truth_target_pose.position.z
+        if z < pick_z + MIN_LIFT_HEIGHT_M:
+            raise RuntimeError(
+                f"把持失敗と判定(上昇後もtarget_objectが持ち上がっていません): "
+                f"実際の高さ={z:.3f}m、必要な高さ={pick_z + MIN_LIFT_HEIGHT_M:.3f}m以上"
+            )
+        self.get_logger().info(f"把持確認OK: target_objectの高さ={z:.3f}mまで持ち上がっています")
+
+    def _verify_placed(self) -> None:
+        place_x, place_y, _ = PLACE_POSITION
+        if self._ground_truth_target_pose is None:
+            raise RuntimeError(f"{GROUND_TRUTH_TF_TOPIC}を一度も受信できておらず、実際に置けたか検証できません")
+        x = self._ground_truth_target_pose.position.x
+        y = self._ground_truth_target_pose.position.y
+        z = self._ground_truth_target_pose.position.z
+        xy_error = math.hypot(x - place_x, y - place_y)
+        if xy_error > GRASP_SUCCESS_XY_TOLERANCE_M:
+            raise RuntimeError(
+                f"ピック失敗と判定(target_objectを実際には運べていません): "
+                f"実際の最終位置=({x:.3f}, {y:.3f}, {z:.3f})、"
+                f"プレイス目標=({place_x:.3f}, {place_y:.3f})からの距離={xy_error:.3f}m"
+            )
+        self.get_logger().info(f"検証OK: target_objectは実際にプレイス目標から{xy_error:.3f}m以内の位置にあります")
+
+    def _log_finger_positions(self, label: str, target_xyz: tuple[float, float, float]) -> None:
+        with self._psm.read_only() as scene:
+            state = scene.current_state
+            for link in ("panda_leftfinger", "panda_rightfinger", "panda_hand"):
+                pose = state.get_pose(link)
+                p = pose.position
+                self.get_logger().info(
+                    f"[DEBUG {label}] {link}: ({p.x:.4f}, {p.y:.4f}, {p.z:.4f})  "
+                    f"target=({target_xyz[0]:.4f}, {target_xyz[1]:.4f}, {target_xyz[2]:.4f})  "
+                    f"dz={p.z - target_xyz[2]:.4f}"
+                )
+
     def _lookup_target_pose(self) -> Pose:
         while rclpy.ok():
             try:
@@ -105,7 +188,7 @@ class PickingControllerNode(Node):
             pose.position.x = transform.transform.translation.x
             pose.position.y = transform.transform.translation.y
             pose.position.z = transform.transform.translation.z
-            pose.orientation = DOWNWARD_ORIENTATION
+            pose.orientation = _grasp_orientation_for_yaw(transform.transform.rotation)
             return pose
         raise RuntimeError("rclpy shutdown中にTF取得が中断されました")
 
@@ -128,13 +211,15 @@ class PickingControllerNode(Node):
         obj.operation = CollisionObject.REMOVE
         self._psm.process_collision_object(collision_object_msg=obj)
 
-    def _move_to(self, position_xyz: tuple[float, float, float]) -> None:
+    def _move_to(
+        self, position_xyz: tuple[float, float, float], orientation: Quaternion = DOWNWARD_ORIENTATION
+    ) -> None:
         pose_goal = PoseStamped()
         pose_goal.header.frame_id = WORLD_FRAME
         pose_goal.pose.position.x = position_xyz[0]
         pose_goal.pose.position.y = position_xyz[1]
         pose_goal.pose.position.z = position_xyz[2] + FLANGE_TO_FINGERTIP_Z
-        pose_goal.pose.orientation = DOWNWARD_ORIENTATION
+        pose_goal.pose.orientation = orientation
 
         self._arm.set_start_state_to_current_state()
         self._arm.set_goal_state(pose_stamped_msg=pose_goal, pose_link=END_EFFECTOR_LINK)
@@ -201,7 +286,7 @@ class PickingControllerNode(Node):
         place_x, place_y, place_z = PLACE_POSITION
 
         self.get_logger().info("アプローチ")
-        self._move_to((pick_x, pick_y, pick_z + APPROACH_HEIGHT))
+        self._move_to((pick_x, pick_y, pick_z + APPROACH_HEIGHT), target_pose.orientation)
         self._set_gripper(GRIPPER_OPEN_POSITIONS)
 
         self.get_logger().info("下降")
@@ -209,20 +294,28 @@ class PickingControllerNode(Node):
         # target_object自体との衝突により有効な目標姿勢が見つからずGOAL_STATE_INVALIDになるため、
         # 掴みに行く直前だけ一時的に外す(把持後はattached collision objectとして登録し直す)。
         self._remove_collision_object(TARGET_FRAME)
-        self._move_to((pick_x, pick_y, pick_z))
+        self._move_to((pick_x, pick_y, pick_z), target_pose.orientation)
+        self._log_finger_positions("下降後", (pick_x, pick_y, pick_z))
 
         self.get_logger().info("把持")
         self._set_gripper(GRIPPER_CLOSED_POSITIONS)
         self._attach_target()
+        self._log_finger_positions("把持後", (pick_x, pick_y, pick_z))
 
         self.get_logger().info("上昇")
-        self._move_to((pick_x, pick_y, pick_z + APPROACH_HEIGHT))
+        self._move_to((pick_x, pick_y, pick_z + APPROACH_HEIGHT), target_pose.orientation)
+        # プレイス降下・リリースへ進む前に、実際に持ち上がっているかをここで確認する。
+        # 確認しないと、指の間からすり抜けて何も持っていない状態のままプレイス動作を
+        # 最後まで実行し、最終位置のズレでしか失敗に気づけない。
+        self._verify_grasped(pick_z)
 
         self.get_logger().info("プレイス位置上空へ移動")
-        self._move_to((place_x, place_y, place_z + APPROACH_HEIGHT))
+        # 把持したまま姿勢を変えると指の間でtarget_objectがずれる恐れがあるため、
+        # 把持時と同じ向きを保ったまま移動する。
+        self._move_to((place_x, place_y, place_z + APPROACH_HEIGHT), target_pose.orientation)
 
         self.get_logger().info("プレイス降下")
-        self._move_to((place_x, place_y, place_z))
+        self._move_to((place_x, place_y, place_z), target_pose.orientation)
 
         self.get_logger().info("リリース")
         self._set_gripper(GRIPPER_OPEN_POSITIONS)
@@ -249,6 +342,7 @@ class PickingControllerNode(Node):
         self._register_collision_object(WORLD_FRAME, TARGET_FRAME, place_pose)
 
         self.get_logger().info("ピック&プレイス完了")
+        self._verify_placed()
 
 
 def main() -> None:

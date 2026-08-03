@@ -139,6 +139,7 @@ def main():
     import isaacsim.core.experimental.utils.stage as stage_utils
     import numpy as np
     import omni.timeline
+    from isaacsim.core.experimental.materials import RigidBodyMaterial
     from isaacsim.core.experimental.objects import Camera, Cube
     from isaacsim.core.experimental.prims import GeomPrim, RigidPrim
     from isaacsim.robot.experimental.manipulators.examples.franka import Franka
@@ -151,20 +152,49 @@ def main():
 
     Franka(robot_path="/World/panda")
 
+    # TARGET_OBJECT_X/Y/YAW環境変数が指定されていればそれを使う。学習データ収集用に
+    # 物体の初期位置・向きを実行のたびに変えられるようにするためのフックで、未指定時は
+    # 従来通り固定位置・向きになる。
+    target_x = float(os.environ.get("TARGET_OBJECT_X", 0.5))
+    target_y = float(os.environ.get("TARGET_OBJECT_Y", 0.0))
+    target_yaw = float(os.environ.get("TARGET_OBJECT_YAW", 0.0))
+    target_orientation = [np.cos(target_yaw / 2.0), 0.0, 0.0, np.sin(target_yaw / 2.0)]
     target_shape = Cube(
         paths="/World/target_object",
-        positions=np.array([[0.5, 0.0, 0.05]]),
+        positions=np.array([[target_x, target_y, 0.05]]),
+        orientations=np.array([target_orientation]),
         sizes=[0.05],
         reset_xform_op_properties=True,
     )
-    GeomPrim(paths=target_shape.paths, apply_collision_apis=True)
+    target_geom = GeomPrim(paths=target_shape.paths, apply_collision_apis=True)
+    # 物理マテリアルを明示的に指定しないと摩擦係数がPhysics側のデフォルト任せになり、
+    # グリッパーが接触しても保持に足る摩擦力が得られず、掴んだ物体が滑り落ちることがある
+    # (Isaac Simの公式トラブルシューティングでも摩擦係数の明示設定が案内されている)。
+    grip_material = RigidBodyMaterial(
+        "/World/physics_materials/grippy",
+        static_frictions=[1.0],
+        dynamic_frictions=[0.9],
+    )
+    target_geom.apply_physics_materials(grip_material)
     RigidPrim(paths=target_shape.paths)
+    # フィンガー側の摩擦係数がFrankaアセットのデフォルトのままだと、target_object側だけ
+    # 摩擦を上げても実効摩擦(組み合わせ)が不十分になり、持ち上げには成功しても
+    # 高速な運搬中の慣性力で滑り落ちることがある(把持直後の複数回検証で確認済み)。
+    finger_geom = GeomPrim(
+        paths=["/World/panda/panda_leftfinger", "/World/panda/panda_rightfinger"],
+        apply_collision_apis=True,
+    )
+    finger_geom.apply_physics_materials(grip_material)
 
     # Ref: https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/reference_conventions.html
     # Isaac Simのカメラは-Zをローカルの視線方向とする(world基準の+Zが上)ため、
     # target_object付近の真上にorientation指定なし(=単位クォータニオン)で置くだけで真下を向く。
-    camera = Camera(paths="/World/camera", positions=np.array([[0.5, 0.0, 0.6]]))
-    # UsdGeom.Cameraのデフォルトの近クリップ面は1.0(stage単位=メートル)で、カメラ高さ0.6mより
+    # 高さ0.6mだと、学習データ収集で物体をランダム配置できる範囲(画角に収まる範囲)が
+    # 対角±7cm程度しかなく、yawも含めた姿勢の多様性を確保するには狭すぎる。
+    # 0.8mまで上げて画角を広げ、対角±11cm程度まで拡張する(キューブの見かけサイズは
+    # 139px→102pxに縮むが、8キーポイントのpose推定には十分な解像度)。
+    camera = Camera(paths="/World/camera", positions=np.array([[0.5, 0.0, 0.8]]))
+    # UsdGeom.Cameraのデフォルトの近クリップ面は1.0(stage単位=メートル)で、カメラ高さ0.8mより
     # 遠いため、workspace全体(0.5〜0.6m先)が近クリップ面の内側に入ってしまい何も描画されない。
     camera.set_clipping_ranges(near_distances=[0.01], far_distances=[10.0])
 
