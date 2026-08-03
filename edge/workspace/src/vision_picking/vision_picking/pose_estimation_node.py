@@ -55,6 +55,19 @@ MIN_KEYPOINTS_FOR_PNP = 4
 # solvePnPは数値的には解を返すが物理的にありえない姿勢になることがある。
 # 再投影誤差が大きい解は破棄する。
 MAX_REPROJECTION_ERROR_PX = 15.0
+# アームがカメラとtarget_objectの間を横切って大部分を遮蔽すると、モデルが見えない箇所の
+# キーポイントを高い信頼度で誤って出力し、2D的には辻褄が合う(再投影誤差が小さい)まま
+# 物理的にありえない深度に収束することがある。target_objectは常にテーブル面上
+# (z≈0.025m)にあるため、worldフレームでのZがこの範囲を外れる解は破棄する。
+EXPECTED_OBJECT_Z_M = 0.025
+MAX_Z_ERROR_M = 0.05
+# Zレンジチェックは明らかな暴走値を弾けるが、範囲内に収まる程度の不正確な値までは
+# 検出できない(境界付近の値がそのまま把持位置のズレに直結し、把持失敗を招くことがある)。
+# 直近STABILITY_WINDOW件が互いにSTABILITY_TOLERANCE_M以内に収まって初めて
+# 「安定して検出できた」とみなし、TFを配信する。範囲チェックで弾かれたフレームがあれば
+# 連続性が途切れたとみなし、蓄積をリセットする。
+STABILITY_WINDOW = 3
+STABILITY_TOLERANCE_M = 0.01
 
 
 class PoseEstimationNode(Node):
@@ -70,6 +83,7 @@ class PoseEstimationNode(Node):
         with open(OBJECT_KEYPOINTS_PATH) as f:
             keypoints_data = json.load(f)
         self._object_points = np.array(keypoints_data["keypoints_local_xyz"], dtype=np.float64)
+        self._recent_translations: list[np.ndarray] = []
 
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._on_camera_info, 10)
         self.create_subscription(Image, RGB_TOPIC, self._on_rgb, 10)
@@ -134,6 +148,29 @@ class PoseEstimationNode(Node):
 
         world_to_object_mat = _transform_to_matrix(world_to_camera.transform) @ object_to_camera
         translation = world_to_object_mat[:3, 3]
+        if abs(float(translation[2]) - EXPECTED_OBJECT_Z_M) > MAX_Z_ERROR_M:
+            self.get_logger().info(
+                f"Zが物理的にありえない範囲({translation[2]:.3f}m)のためTF配信をスキップ"
+            )
+            self._recent_translations.clear()
+            return
+
+        self._recent_translations.append(translation.copy())
+        if len(self._recent_translations) > STABILITY_WINDOW:
+            self._recent_translations.pop(0)
+        if len(self._recent_translations) < STABILITY_WINDOW:
+            return
+        spread = max(
+            float(np.linalg.norm(a - b))
+            for i, a in enumerate(self._recent_translations)
+            for b in self._recent_translations[i + 1 :]
+        )
+        if spread > STABILITY_TOLERANCE_M:
+            self.get_logger().info(
+                f"検出が安定していない(直近{STABILITY_WINDOW}件のばらつき{spread:.3f}m)ためTF配信をスキップ"
+            )
+            return
+
         qx, qy, qz, qw = quaternion_from_matrix(world_to_object_mat)
 
         out = TransformStamped()
