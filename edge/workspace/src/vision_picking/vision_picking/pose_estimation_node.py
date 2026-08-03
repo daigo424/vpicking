@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""深度点群のセグメンテーション + 重心・主軸(PCA)推定でtarget_objectの6D Poseを推定する。
+"""YOLO11-Pose + PnPでtarget_objectの6D Poseを推定する(本番認識ノード)。
 
-gt_tf_publisher_nodeと全く同じworld -> target_objectのTFを/tfへ配信することで、
-picking_controller_node側のコードを変更せずに認識方式を差し替えられるようにする。
-学習済みモデルの代わりに、テーブル面との深度差でtarget_objectを分離する軽量な
-古典的CV手法を使う。
+yolo_pose.pyが学習したモデルでRGB画像から物体の2Dキーポイントを検出し、
+<MODEL_DIR>/object_3d_keypoints.json(物体ローカル座標での8頂点定義)と
+組み合わせてcv2.solvePnP()で6D Poseを求める。モデル重み・キーポイント定義はどちらも
+学習のたびに結果が変わりうるため、再現性のため気に入ったバージョンだけをdata/models/以下に
+git管理下で保持している(それ以外の学習結果はdata/train-models/にローカルのみで残る)。
+gt_tf_publisher_node/pose_estimation_node_classical_cvと全く同じworld -> target_objectの
+TFを/tfへ配信することで、picking_controller_node側のコードを変更せずに認識方式を
+差し替えられるようにする。
 """
 
+import json
+import os
+
+import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
@@ -16,30 +24,37 @@ from sensor_msgs.msg import CameraInfo, Image
 from tf2_ros import ConnectivityException, ExtrapolationException, LookupException, TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf_transformations import quaternion_from_euler, quaternion_from_matrix, quaternion_matrix
+from tf_transformations import quaternion_from_matrix, quaternion_matrix
+from ultralytics import YOLO
 
 from vision_picking.common import safe_spin
 
 WORLD_FRAME = "world"
 CAMERA_FRAME = "camera"
 TARGET_FRAME = "target_object"
-DEPTH_TOPIC = "/camera/depth/image_raw"
+RGB_TOPIC = "/camera/rgb/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera_info"
 
-# target_objectは5cm角のcubeで、カメラは真上から見下ろしている。テーブル面はカメラの
-# 深度画像の大部分を占めるため、中央値をテーブル面の深度とみなす。カメラの視野には
-# Pandaアーム自体も入り込むため、「テーブルより近ければ物体」という単純な閾値だと
-# テーブルより遥かに手前にあるアームを物体として誤検出する。物体の高さ(5cm角)を
-# 上回らない範囲に上限も設けて、テーブル直上の薄い depth の層だけを物体とみなす。
-DEPTH_MARGIN_MIN_M = 0.02
-DEPTH_MARGIN_MAX_M = 0.10
-MIN_OBJECT_PIXELS = 30
+# MODEL_VERSION環境変数(make vp-run-yolo VER=v1等)でどの学習結果を使うか切り替える。
+# 未指定時はv1(data/models/、git管理下のpush済みモデル)を使う。"train:"で始まる場合は
+# data/train-models/(ローカルのみ・push前の学習直後の結果)を指す。
+_MODEL_VERSION = os.environ.get("MODEL_VERSION", "v1")
+if _MODEL_VERSION.startswith("train:"):
+    _MODEL_DIR = f"/data/train-models/{_MODEL_VERSION[len('train:'):]}"
+else:
+    _MODEL_DIR = f"/data/models/{_MODEL_VERSION}"
+MODEL_PATH = _MODEL_DIR + "/best.pt"
+OBJECT_KEYPOINTS_PATH = _MODEL_DIR + "/object_3d_keypoints.json"
 
-# 深度カメラは物体の上面しか観測できないが、picking_controller_nodeはtarget_objectの
-# フレーム原点を物体の重心として掴みに行く高さを計算している。
-# 上面の重心をそのまま使うと指が物体の上端しか捉えられず把持に失敗するため、
-# 既知の物体サイズの半分だけ下げて重心相当の高さに補正する。
-TARGET_OBJECT_SIZE_M = 0.05
+# 検出信頼度が低いキーポイントをPnPに混ぜると姿勢推定が不安定になるため足切りする。
+# solvePnPには最低4点の対応が必要(8頂点は同一平面上にないため反転曖昧性は出にくいが、
+# 4点未満では解自体が求まらない)。
+MIN_KEYPOINT_CONFIDENCE = 0.5
+MIN_KEYPOINTS_FOR_PNP = 4
+# キーポイント検出自体が破綻している(推定される画像上の位置と実際のキーポイントの対応が取れていない)場合、
+# solvePnPは数値的には解を返すが物理的にありえない姿勢になることがある。
+# 再投影誤差が大きい解は破棄する。
+MAX_REPROJECTION_ERROR_PX = 15.0
 
 
 class PoseEstimationNode(Node):
@@ -51,75 +66,73 @@ class PoseEstimationNode(Node):
         self._tf_listener = TransformListener(self._tf_buffer, self)
         self._broadcaster = TransformBroadcaster(self)
 
+        self._model = YOLO(MODEL_PATH)
+        with open(OBJECT_KEYPOINTS_PATH) as f:
+            keypoints_data = json.load(f)
+        self._object_points = np.array(keypoints_data["keypoints_local_xyz"], dtype=np.float64)
+
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._on_camera_info, 10)
-        self.create_subscription(Image, DEPTH_TOPIC, self._on_depth, 10)
+        self.create_subscription(Image, RGB_TOPIC, self._on_rgb, 10)
 
     def _on_camera_info(self, msg: CameraInfo) -> None:
         self._camera_info = msg
 
-    def _on_depth(self, msg: Image) -> None:
+    def _on_rgb(self, msg: Image) -> None:
         if self._camera_info is None:
             return
 
-        depth = self._bridge.imgmsg_to_cv2(msg, desired_encoding="32FC1")
-        fx, fy = self._camera_info.k[0], self._camera_info.k[4]
-        cx, cy = self._camera_info.k[2], self._camera_info.k[5]
-
-        valid = np.isfinite(depth) & (depth > 0.0)
-        if not np.any(valid):
+        frame = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        result = self._model.predict(frame, verbose=False)[0]
+        if result.boxes is None or len(result.boxes) == 0 or result.keypoints is None:
             return
-        table_depth = float(np.median(depth[valid]))
-        object_mask = (
-            valid
-            & (depth < table_depth - DEPTH_MARGIN_MIN_M)
-            & (depth > table_depth - DEPTH_MARGIN_MAX_M)
+
+        # 複数検出された場合はbox信頼度が最も高い1件を採用する。
+        best_idx = int(result.boxes.conf.argmax())
+        image_points = result.keypoints.xy[best_idx].cpu().numpy()
+        if result.keypoints.conf is not None:
+            kpt_confidences = result.keypoints.conf[best_idx].cpu().numpy()
+        else:
+            kpt_confidences = np.ones(len(image_points))
+
+        valid = kpt_confidences >= MIN_KEYPOINT_CONFIDENCE
+        if np.count_nonzero(valid) < MIN_KEYPOINTS_FOR_PNP:
+            self.get_logger().info("検出キーポイント数が不足しているためTF配信をスキップ")
+            return
+
+        camera_matrix = np.array(self._camera_info.k, dtype=np.float64).reshape(3, 3)
+        dist_coeffs = np.array(self._camera_info.d, dtype=np.float64) if self._camera_info.d else np.zeros(5)
+
+        ok, rvec, tvec = cv2.solvePnP(
+            self._object_points[valid], image_points[valid], camera_matrix, dist_coeffs
         )
-        if np.count_nonzero(object_mask) < MIN_OBJECT_PIXELS:
+        if not ok:
             return
 
-        vs, us = np.nonzero(object_mask)
-        zs = depth[vs, us]
-        # Ref: https://docs.isaacsim.omniverse.nvidia.com/6.0.1/reference_material/reference_conventions.html
-        # 「ROS 2へpublishされるカメラ関連のデータ(姿勢のTF含む)はROS軸(X右, Y下, Z前方)で
-        # 表現される」とIsaac Simのドキュメントが明記しているため、cameraフレームに対して
-        # 通常のpinholeモデルの変換式(X=(u-cx)Z/fx, Y=(v-cy)Z/fy, Z=depth)をそのまま使える。
-        xs = (us - cx) * zs / fx
-        ys = (vs - cy) * zs / fy
-        points_camera = np.stack([xs, ys, zs], axis=1)
-        centroid_camera = points_camera.mean(axis=0)
+        reprojected, _ = cv2.projectPoints(self._object_points[valid], rvec, tvec, camera_matrix, dist_coeffs)
+        reprojection_error = float(np.linalg.norm(reprojected.reshape(-1, 2) - image_points[valid], axis=1).mean())
+        if reprojection_error > MAX_REPROJECTION_ERROR_PX:
+            self.get_logger().info(
+                f"再投影誤差が大きい({reprojection_error:.1f}px)ためTF配信をスキップ"
+            )
+            return
 
-        # 主軸(PCA): target_objectは正方形のcubeで主軸自体に強い意味はないが、
-        # 「深度点群のセグメンテーション+重心+主軸推定」という認識方式そのものを
-        # 実証するために計算する。
-        centered_xy = points_camera[:, :2] - centroid_camera[:2]
-        eigvals, eigvecs = np.linalg.eigh(np.cov(centered_xy.T))
-        principal_axis = eigvecs[:, np.argmax(eigvals)]
-        yaw = float(np.arctan2(principal_axis[1], principal_axis[0]))
+        rotation_matrix, _ = cv2.Rodrigues(rvec)
+        # solvePnPが返すのはtarget_object -> cameraの変換(物体座標系での点をカメラ座標系へ写す行列)なので、
+        # この後world -> cameraと合成してworld -> target_objectへ変換する。
+        object_to_camera = np.eye(4)
+        object_to_camera[:3, :3] = rotation_matrix
+        object_to_camera[:3, 3] = tvec.flatten()
 
-        pose_camera = TransformStamped()
-        pose_camera.header.frame_id = CAMERA_FRAME
-        pose_camera.child_frame_id = TARGET_FRAME
-        pose_camera.transform.translation.x = float(centroid_camera[0])
-        pose_camera.transform.translation.y = float(centroid_camera[1])
-        pose_camera.transform.translation.z = float(centroid_camera[2])
-        qx, qy, qz, qw = quaternion_from_euler(0.0, 0.0, yaw)
-        pose_camera.transform.rotation.x = qx
-        pose_camera.transform.rotation.y = qy
-        pose_camera.transform.rotation.z = qz
-        pose_camera.transform.rotation.w = qw
+        self._publish_in_world_frame(object_to_camera)
 
-        self._publish_in_world_frame(pose_camera)
-
-    def _publish_in_world_frame(self, pose_camera: TransformStamped) -> None:
+    def _publish_in_world_frame(self, object_to_camera: np.ndarray) -> None:
         try:
             world_to_camera = self._tf_buffer.lookup_transform(WORLD_FRAME, CAMERA_FRAME, rclpy.time.Time())
         except (LookupException, ConnectivityException, ExtrapolationException):
             self.get_logger().info(f"{CAMERA_FRAME}のTFを待機中...")
             return
 
-        world_to_object_mat = _transform_to_matrix(world_to_camera.transform) @ _transform_to_matrix(
-            pose_camera.transform
-        )
+        world_to_object_mat = _transform_to_matrix(world_to_camera.transform) @ object_to_camera
         translation = world_to_object_mat[:3, 3]
         qx, qy, qz, qw = quaternion_from_matrix(world_to_object_mat)
 
@@ -129,7 +142,7 @@ class PoseEstimationNode(Node):
         out.child_frame_id = TARGET_FRAME
         out.transform.translation.x = float(translation[0])
         out.transform.translation.y = float(translation[1])
-        out.transform.translation.z = float(translation[2]) - TARGET_OBJECT_SIZE_M / 2.0
+        out.transform.translation.z = float(translation[2])
         out.transform.rotation.x = qx
         out.transform.rotation.y = qy
         out.transform.rotation.z = qz

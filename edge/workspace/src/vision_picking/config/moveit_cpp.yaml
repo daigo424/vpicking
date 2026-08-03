@@ -11,7 +11,14 @@ planning_pipelines:
   pipeline_names: ["ompl"]
 
 plan_request_params:
-  planning_attempts: 1
+  # OMPLは制限時間内に解が見つからないと諦めるため、1回・短時間だけだと
+  # (特に物体近傍でのIK・自己衝突回避が絡む下降時に)ごく稀に失敗することがある。
+  # 複数回試行・1回あたりの時間を延ばすことで、こうした偶発的な失敗を減らす。
+  planning_attempts: 5
+  planning_time: 10.0
   planning_pipeline: ompl
-  max_velocity_scaling_factor: 1.0
-  max_acceleration_scaling_factor: 1.0
+  # フルスピード(1.0)だと、物体を保持したまま運ぶ区間(上昇・プレイス移動・プレイス降下)で
+  # 加速度が摩擦による保持力を上回り、掴んだ物体が滑り落ちることがある
+  # (複数回の検証で、持ち上げ自体は成功するが運搬中に脱落するパターンを確認済み)。
+  max_velocity_scaling_factor: 0.3
+  max_acceleration_scaling_factor: 0.3

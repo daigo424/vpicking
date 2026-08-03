@@ -1,4 +1,4 @@
-.PHONY: up build test build-test new-launch-pkg rviz rviz-flat
+.PHONY: up build test build-test new-launch-pkg rviz rviz-flat dataset train dataset-split dataset-collect-picking-session model-promote
 
 COMPOSE_PJ_NAME    := vpicking
 # WSL2かネイティブLinuxかでGPUパススルーの構成が別物になる(edge/docker/docker-compose.gpu-*.yml参照)
@@ -86,20 +86,69 @@ vp-picking-controller:
 	$(MAKE) colcon CMD_RUN="pixi run picking_controller_node"
 vp-camera-bridge:
 	$(MAKE) colcon CMD_RUN="pixi run camera_bridge_node"
+vp-pose-estimation-classical-cv:
+	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node_classical_cv"
+
+# edge/workspace/scripts/dataset/ または train/ 配下にあるスクリプトを対話式で選んで実行する。
+dataset:
+	@bash scripts/select_method.sh dataset
+train:
+	@bash scripts/select_method.sh train
+
+# データ収集後・学習前に1回実行し、/data/datasetのtrain/valをリークしない形に分割する。
+dataset-split:
+	$(MAKE) colcon CMD_RUN="pixi run split_dataset"
+
+# make simでシムを起動する代わりに、シムの起動〜ランダム配置〜1回のピック実行〜記録を
+# 指定回数繰り返す。事前にmake simを実行しておく必要はない(このターゲット自身がシムを都度起動する)。
+ITERATIONS ?= 40
+FRAMES     ?= 8
+dataset-collect-picking-session:
+	@bash scripts/collect_picking_session_dataset.sh $(ITERATIONS) $(FRAMES)
+
+# 気に入った学習結果を data/train-models/<VER>/(ローカルのみ)から
+# data/models/(git管理下・push対象)へ昇格させる。data/models/側は「pushしたモデルの通し番号」
+# として独立に採番する(data/train-models/側の番号をそのまま使い回さない)。
+model-promote:
+	@V="$(VER)"; \
+	if [ -z "$$V" ]; then echo "使い方: make model-promote VER=v7" >&2; exit 1; fi; \
+	if [ ! -f "data/train-models/$$V/best.pt" ]; then echo "data/train-models/$$V/best.pt が見つかりません" >&2; exit 1; fi; \
+	NEW_N=$$(ls -1 data/models 2>/dev/null | grep -E '^v[0-9]+$$' | sed 's/^v//' | sort -n | tail -1); \
+	if [ -z "$$NEW_N" ]; then NEW_N=0; fi; \
+	NEW_V="v$$((NEW_N+1))"; \
+	mkdir -p "data/models/$$NEW_V" && \
+	cp "data/train-models/$$V/best.pt" "data/models/$$NEW_V/best.pt" && \
+	cp "data/train-models/$$V/object_3d_keypoints.json" "data/models/$$NEW_V/object_3d_keypoints.json" && \
+	echo "data/train-models/$$V -> data/models/$$NEW_V に昇格しました"
+
+# VERは"v1"(data/models/配下、git管理・push済み)または"train:v7"
+# (data/train-models/配下、ローカルのみ・push前)の形式で指定する(例: make vp-pose-estimation VER=v1)。
+# 未指定時はscripts/select_version.shで対話式に選ばせる。
+VER ?=
 vp-pose-estimation:
-	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node"
+	@V="$(VER)"; \
+	if [ -z "$$V" ]; then V=$$(bash scripts/select_version.sh); fi; \
+	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$V pixi run pose_estimation_node"
 
 # ROS2: Vision Pickingの起動
 # ※ 先に`make sim`を実行してIsaac Simを起動。
 #
 # vp-run-gt: 座標をそのまま使ったピッキング
-# vp-run-cv: Depthカメラの画像から物体姿勢を推定してピッキング
+# vp-run-cv: Depthカメラの画像から物体姿勢を推定してピッキング(古典的CV版)
+# vp-run-yolo: RGB画像からYOLO11-Pose+PnPで物体姿勢を推定してピッキング(本番版)
 vp-run-gt:
 	@$(MAKE) vp-gt-tf-publisher EXEC="$(COMPOSE) exec -T" & \
 	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/gt_tf_publisher_node" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
 vp-run-cv:
 	@$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
-	$(MAKE) vp-pose-estimation EXEC="$(COMPOSE) exec -T" & \
-	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	$(MAKE) vp-pose-estimation-classical-cv EXEC="$(COMPOSE) exec -T" & \
+	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node_classical_cv" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	$(MAKE) vp-picking-controller
+vp-run-yolo:
+	@V="$(VER)"; \
+	if [ -z "$$V" ]; then V=$$(bash scripts/select_version.sh); fi; \
+	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) vp-pose-estimation EXEC="$(COMPOSE) exec -T" VER=$$V & \
+	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
