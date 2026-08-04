@@ -10,6 +10,9 @@ picking_controller_nodeの実動作でアームが写り込んだ実カメラ画
 
 事前にmake vp-run-gtでピッキングパイプラインを別途起動しておく必要がある
 (gt_tf_publisher_node/camera_bridge_nodeが動いていないと画像・TFが得られない)。
+
+CAMERA_NAMESPACE環境変数で、俯瞰カメラ(既定値"camera")・手先カメラ("wrist_camera"等)の
+どちらのデータを収集するかを切り替えられる(pose_estimation_node.pyと同じ命名規則)。
 """
 
 import argparse
@@ -31,11 +34,12 @@ from tf2_ros.transform_listener import TransformListener
 from tf_transformations import quaternion_matrix
 
 WORLD_FRAME = "world"
-CAMERA_FRAME = "camera"
+CAMERA_NAMESPACE = os.environ.get("CAMERA_NAMESPACE", "camera")
+CAMERA_FRAME = CAMERA_NAMESPACE
 TARGET_FRAME = "target_object"
-RGB_TOPIC = "/camera/rgb/image_raw"
-DEPTH_TOPIC = "/camera/depth/image_raw"
-CAMERA_INFO_TOPIC = "/camera/camera_info"
+RGB_TOPIC = f"/{CAMERA_NAMESPACE}/rgb/image_raw"
+DEPTH_TOPIC = f"/{CAMERA_NAMESPACE}/depth/image_raw"
+CAMERA_INFO_TOPIC = f"/{CAMERA_NAMESPACE}/camera_info"
 
 # 学習データとして使うには、visible=2(遮蔽なし・画角内)の頂点が最低これだけ必要。
 # 画角内に十分な頂点が写っていないフレーム(アームに完全遮蔽・画角外)は記録しない。
@@ -44,7 +48,7 @@ MIN_VISIBLE_CORNERS = 4
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", default="/data/dataset")
+    parser.add_argument("--output-dir", required=True, help="data/<camera>/dataset/<version>のパス")
     parser.add_argument("--max-frames", type=int, default=60, help="このプロセスで記録する最大フレーム数")
     parser.add_argument("--min-interval-sec", type=float, default=0.15, help="フレーム間の最小記録間隔")
     parser.add_argument("--start-index", type=int, default=0, help="ファイル名の開始インデックス")

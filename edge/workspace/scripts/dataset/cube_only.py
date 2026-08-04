@@ -32,7 +32,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--headless", action="store_true", help="GUIを表示せずに起動する")
     parser.add_argument("--num-frames", type=int, default=50, help="生成するフレーム数")
-    parser.add_argument("--output-dir", default="/data/dataset", help="出力先ディレクトリ")
+    parser.add_argument("--output-dir", required=True, help="出力先ディレクトリ(data/<camera>/dataset/<version>)")
     return parser.parse_args()
 
 

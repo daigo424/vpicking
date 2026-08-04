@@ -1,4 +1,4 @@
-.PHONY: up build test build-test new-launch-pkg rviz rviz-flat dataset train dataset-split dataset-collect-picking-session model-promote
+.PHONY: up build test build-test new-launch-pkg rviz rviz-flat dataset train dataset-split dataset-collect-picking-session dataset-collect-wrist-picking-session model-promote
 
 COMPOSE_PJ_NAME    := vpicking
 # WSL2かネイティブLinuxかでGPUパススルーの構成が別物になる(edge/docker/docker-compose.gpu-*.yml参照)
@@ -88,6 +88,9 @@ vp-camera-bridge:
 	$(MAKE) colcon CMD_RUN="pixi run camera_bridge_node"
 vp-pose-estimation-classical-cv:
 	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node_classical_cv"
+# Foxglove Studio(https://app.foxglove.dev)からws://localhost:8765に接続してカメラ画像・TF等を可視化する。
+vp-foxglove:
+	$(MAKE) colcon CMD_RUN="pixi run foxglove_bridge"
 
 # edge/workspace/scripts/dataset/ または train/ 配下にあるスクリプトを対話式で選んで実行する。
 dataset:
@@ -95,39 +98,47 @@ dataset:
 train:
 	@bash scripts/select_method.sh train
 
-# データ収集後・学習前に1回実行し、/data/datasetのtrain/valをリークしない形に分割する。
+# データ収集後・学習前に1回実行し、data/<camera>/dataset/<version>のtrain/valを
+# リークしない形に分割する(例: make dataset-split DATASET_DIR=data/overhead-camera/dataset/v1)。
+DATASET_DIR ?=
 dataset-split:
-	$(MAKE) colcon CMD_RUN="pixi run split_dataset"
+	@if [ -z "$(DATASET_DIR)" ]; then echo "使い方: make dataset-split DATASET_DIR=data/overhead-camera/dataset/v1" >&2; exit 1; fi
+	$(MAKE) colcon CMD_RUN="pixi run split_dataset --dataset-dir $(DATASET_DIR)"
 
 # make simでシムを起動する代わりに、シムの起動〜ランダム配置〜1回のピック実行〜記録を
 # 指定回数繰り返す。事前にmake simを実行しておく必要はない(このターゲット自身がシムを都度起動する)。
+# 実行のたびにdata/overhead-camera/dataset/配下へ新しいバージョンディレクトリを採番する。
 ITERATIONS ?= 40
 FRAMES     ?= 8
 dataset-collect-picking-session:
 	@bash scripts/collect_picking_session_dataset.sh $(ITERATIONS) $(FRAMES)
 
-# 気に入った学習結果を data/train-models/<VER>/(ローカルのみ)から
-# data/models/(git管理下・push対象)へ昇格させる。data/models/側は「pushしたモデルの通し番号」
-# として独立に採番する(data/train-models/側の番号をそのまま使い回さない)。
-model-promote:
-	@V="$(VER)"; \
-	if [ -z "$$V" ]; then echo "使い方: make model-promote VER=v7" >&2; exit 1; fi; \
-	if [ ! -f "data/train-models/$$V/best.pt" ]; then echo "data/train-models/$$V/best.pt が見つかりません" >&2; exit 1; fi; \
-	NEW_N=$$(ls -1 data/models 2>/dev/null | grep -E '^v[0-9]+$$' | sed 's/^v//' | sort -n | tail -1); \
-	if [ -z "$$NEW_N" ]; then NEW_N=0; fi; \
-	NEW_V="v$$((NEW_N+1))"; \
-	mkdir -p "data/models/$$NEW_V" && \
-	cp "data/train-models/$$V/best.pt" "data/models/$$NEW_V/best.pt" && \
-	cp "data/train-models/$$V/object_3d_keypoints.json" "data/models/$$NEW_V/object_3d_keypoints.json" && \
-	echo "data/train-models/$$V -> data/models/$$NEW_V に昇格しました"
+# 俯瞰カメラ向けと同じ収集方式を手先カメラ(data/wrist-camera/dataset/)向けに行う。
+dataset-collect-wrist-picking-session:
+	@bash scripts/collect_wrist_picking_session_dataset.sh $(ITERATIONS) $(FRAMES)
 
-# VERは"v1"(data/models/配下、git管理・push済み)または"train:v7"
-# (data/train-models/配下、ローカルのみ・push前)の形式で指定する(例: make vp-pose-estimation VER=v1)。
-# 未指定時はscripts/select_version.shで対話式に選ばせる。
+# 気に入った学習結果を data/<camera>/train-models/<VER>/(ローカルのみ)から
+# data/<camera>/models/(git管理下・push対象)へ昇格させる。data/<camera>/models/側は
+# 「pushしたモデルの通し番号」として独立に採番する(train-models側の番号をそのまま使い回さない)。
+model-promote:
+	@CAM="$(CAMERA)"; \
+	V="$(VER)"; \
+	if [ -z "$$CAM" ] || [ -z "$$V" ]; then echo "使い方: make model-promote CAMERA=wrist-camera VER=v7" >&2; exit 1; fi; \
+	if [ ! -f "data/$$CAM/train-models/$$V/best.pt" ]; then echo "data/$$CAM/train-models/$$V/best.pt が見つかりません" >&2; exit 1; fi; \
+	NEW_V=$$(bash scripts/next_version_dir.sh "data/$$CAM/models"); \
+	mkdir -p "data/$$CAM/models/$$NEW_V" && \
+	cp "data/$$CAM/train-models/$$V/best.pt" "data/$$CAM/models/$$NEW_V/best.pt" && \
+	cp "data/$$CAM/train-models/$$V/object_3d_keypoints.json" "data/$$CAM/models/$$NEW_V/object_3d_keypoints.json" && \
+	echo "data/$$CAM/train-models/$$V -> data/$$CAM/models/$$NEW_V に昇格しました"
+
+# VERは"v1"(data/overhead-camera/models/配下、git管理・push済み)または"train:v7"
+# (data/overhead-camera/train-models/配下、ローカルのみ・push前)の形式で指定する
+# (例: make vp-pose-estimation VER=v1)。未指定時はscripts/select_version.shで対話式に選ばせる。
+# このターゲットは俯瞰カメラ単独運用(CAMERA_NAMESPACE既定値)向け。
 VER ?=
 vp-pose-estimation:
 	@V="$(VER)"; \
-	if [ -z "$$V" ]; then V=$$(bash scripts/select_version.sh); fi; \
+	if [ -z "$$V" ]; then V=$$(bash scripts/select_version.sh "" overhead-camera); fi; \
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$V pixi run pose_estimation_node"
 
 # ROS2: Vision Pickingの起動
@@ -145,10 +156,18 @@ vp-run-cv:
 	$(MAKE) vp-pose-estimation-classical-cv EXEC="$(COMPOSE) exec -T" & \
 	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node_classical_cv" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
+# vp-run-yolo: 俯瞰カメラ(粗検出、VER_COARSE)・手先カメラ(精緻検出、VER_FINE)の
+# 2つのpose_estimation_nodeインスタンスを同時起動する(pose_estimation_node.py自体は
+# CAMERA_NAMESPACE/TARGET_FRAME_OUT環境変数だけでどちらの用途にもそのまま使える)。
+VER_COARSE ?=
+VER_FINE   ?=
 vp-run-yolo:
-	@V="$(VER)"; \
-	if [ -z "$$V" ]; then V=$$(bash scripts/select_version.sh); fi; \
+	@VC="$(VER_COARSE)"; \
+	if [ -z "$$VC" ]; then VC=$$(bash scripts/select_version.sh "俯瞰カメラ(粗検出)" overhead-camera); fi; \
+	VF="$(VER_FINE)"; \
+	if [ -z "$$VF" ]; then VF=$$(bash scripts/select_version.sh "手先カメラ(精緻検出)" wrist-camera); fi; \
 	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
-	$(MAKE) vp-pose-estimation EXEC="$(COMPOSE) exec -T" VER=$$V & \
+	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VC CAMERA_NAMESPACE=camera TARGET_FRAME_OUT=target_object_coarse pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VF CAMERA_NAMESPACE=wrist_camera TARGET_FRAME_OUT=target_object_fine pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
 	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller

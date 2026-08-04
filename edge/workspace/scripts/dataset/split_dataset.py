@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""既存の/data/dataset/{images,labels,pose_gt.json}をtrain/valに分割し、dataset.yamlを更新する。
+"""既存のdata/<camera>/dataset/<version>/{images,labels,pose_gt.json}をtrain/valに分割し、
+dataset.yamlを更新する。
 
 物体がほぼ静止したまま連続撮影される区間があるため、frame単位でシャッフル分割すると
 ほぼ同一画像がtrain/val両方に混入してリーク(検証指標が意味を持たなくなる)する。
@@ -15,7 +16,7 @@ import random
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-dir", default="/data/dataset")
+    parser.add_argument("--dataset-dir", required=True, help="data/<camera>/dataset/<version>のパス")
     parser.add_argument("--val-ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()

@@ -14,16 +14,22 @@ def parse_args():
     return parser.parse_args()
 
 
-def build_action_graph(panda_prim_path: str, target_object_prim_path: str, camera_prim_path: str):
+def build_action_graph(panda_prim_path: str, target_object_prim_path: str, cameras: list[dict]):
     """ROS2Context / JointState Pub-Sub / ArticulationController / 物体GT位置姿勢配線 / カメラ配線を構築する。
 
-    target_objectとcameraの真値TFは最終的な`/tf`ではなく`/ground_truth/tf`にpublishする。
+    target_objectとカメラの真値TFは最終的な`/tf`ではなく`/ground_truth/tf`にpublishする。
     `vision_picking`パッケージの`gt_tf_publisher_node`がこれをsubscribeして
     world -> target_objectとして`/tf`に再publishする構成にすることで、
     認識方式を変える場合でも`/tf`へのpublisher側を差し替えるだけで済むようにするため。
-    カメラ画像も同様に、OmniGraph側の実装依存のトピック名(/sim_camera/*)で一旦publishし、
+    カメラ画像も同様に、OmniGraph側の実装依存のトピック名で一旦publishし、
     認識ノード側が依存する安定したトピック名への変換は`vision_picking`パッケージ側の
     ノードに委ねる。
+
+    camerasは俯瞰・手先カメラ等、複数台分の設定を表す辞書のリスト。各要素のキー:
+      - prim_path: カメラプリムのパス
+      - node_prefix: このカメラ用に生成するOmniGraphノード名の接頭辞(カメラ間で重複しないこと)
+      - topic_prefix: 中継トピック名の接頭辞({topic_prefix}/rgb 等)
+      - frame_id: TFのframe_id(camera_bridge_node側で完全一致判定に使う)
     """
     import omni.graph.core as og
 
@@ -31,83 +37,103 @@ def build_action_graph(panda_prim_path: str, target_object_prim_path: str, camer
     # Isaac Sim 6.0でROS2PublishTransformTree/ROS2PublishJointStateにtargetPrim(s)を直接渡す方式が
     # 非推奨になり、IsaacComputeTransformTree/IsaacReadJointStateが計算した値を明示的に渡す構成が
     # 推奨されているため、その配線に従っている。
+    create_nodes = [
+        ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+        ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
+        ("ROS2PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
+        ("ReadJointState", "isaacsim.sensors.physics.IsaacReadJointState"),
+        ("ROS2PublishJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
+        ("ROS2SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
+        ("ArticulationController", "isaacsim.core.nodes.IsaacArticulationController"),
+        ("ComputeGtTransformTree", "isaacsim.core.nodes.IsaacComputeTransformTree"),
+        ("ROS2PublishGtTransformTree", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
+        ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
+    ]
+    connect = [
+        ("OnPlaybackTick.outputs:tick", "ROS2PublishClock.inputs:execIn"),
+        ("OnPlaybackTick.outputs:tick", "ReadJointState.inputs:execIn"),
+        ("OnPlaybackTick.outputs:tick", "ROS2SubscribeJointState.inputs:execIn"),
+        ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
+        ("OnPlaybackTick.outputs:tick", "ComputeGtTransformTree.inputs:execIn"),
+        ("ReadJointState.outputs:execOut", "ROS2PublishJointState.inputs:execIn"),
+        ("ReadJointState.outputs:jointNames", "ROS2PublishJointState.inputs:jointNames"),
+        ("ReadJointState.outputs:jointPositions", "ROS2PublishJointState.inputs:jointPositions"),
+        ("ReadJointState.outputs:jointVelocities", "ROS2PublishJointState.inputs:jointVelocities"),
+        ("ReadJointState.outputs:jointEfforts", "ROS2PublishJointState.inputs:jointEfforts"),
+        ("ReadJointState.outputs:jointDofTypes", "ROS2PublishJointState.inputs:jointDofTypes"),
+        ("ReadJointState.outputs:sensorTime", "ROS2PublishJointState.inputs:sensorTime"),
+        ("ReadJointState.outputs:stageMetersPerUnit", "ROS2PublishJointState.inputs:stageMetersPerUnit"),
+        ("ComputeGtTransformTree.outputs:execOut", "ROS2PublishGtTransformTree.inputs:execIn"),
+        ("ComputeGtTransformTree.outputs:parentFrames", "ROS2PublishGtTransformTree.inputs:parentFrames"),
+        ("ComputeGtTransformTree.outputs:childFrames", "ROS2PublishGtTransformTree.inputs:childFrames"),
+        ("ComputeGtTransformTree.outputs:translations", "ROS2PublishGtTransformTree.inputs:translations"),
+        ("ComputeGtTransformTree.outputs:orientations", "ROS2PublishGtTransformTree.inputs:orientations"),
+        ("ROS2Context.outputs:context", "ROS2PublishClock.inputs:context"),
+        ("ROS2Context.outputs:context", "ROS2PublishJointState.inputs:context"),
+        ("ROS2Context.outputs:context", "ROS2SubscribeJointState.inputs:context"),
+        ("ROS2Context.outputs:context", "ROS2PublishGtTransformTree.inputs:context"),
+        ("ReadSimTime.outputs:simulationTime", "ROS2PublishGtTransformTree.inputs:timeStamp"),
+        ("ROS2SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
+        ("ROS2SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
+        ("ROS2SubscribeJointState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
+        ("ROS2SubscribeJointState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"),
+    ]
+    set_values = [
+        ("ReadJointState.inputs:prim", panda_prim_path),
+        ("ArticulationController.inputs:targetPrim", panda_prim_path),
+        ("ROS2PublishJointState.inputs:topicName", "/joint_states"),
+        ("ROS2SubscribeJointState.inputs:topicName", "/joint_command"),
+        (
+            "ComputeGtTransformTree.inputs:targetPrims",
+            [target_object_prim_path] + [camera["prim_path"] for camera in cameras],
+        ),
+        ("ROS2PublishGtTransformTree.inputs:topicName", "/ground_truth/tf"),
+    ]
+
+    for camera in cameras:
+        prefix = camera["node_prefix"]
+        render_node = f"CreateCameraRenderProduct_{prefix}"
+        rgb_node = f"ROS2PublishCameraRgb_{prefix}"
+        depth_node = f"ROS2PublishCameraDepth_{prefix}"
+        info_node = f"ROS2PublishCameraInfo_{prefix}"
+        create_nodes += [
+            (render_node, "isaacsim.core.nodes.IsaacCreateRenderProduct"),
+            (rgb_node, "isaacsim.ros2.bridge.ROS2CameraHelper"),
+            (depth_node, "isaacsim.ros2.bridge.ROS2CameraHelper"),
+            (info_node, "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
+        ]
+        connect += [
+            ("OnPlaybackTick.outputs:tick", f"{render_node}.inputs:execIn"),
+            (f"{render_node}.outputs:execOut", f"{rgb_node}.inputs:execIn"),
+            (f"{render_node}.outputs:execOut", f"{depth_node}.inputs:execIn"),
+            (f"{render_node}.outputs:execOut", f"{info_node}.inputs:execIn"),
+            (f"{render_node}.outputs:renderProductPath", f"{rgb_node}.inputs:renderProductPath"),
+            (f"{render_node}.outputs:renderProductPath", f"{depth_node}.inputs:renderProductPath"),
+            (f"{render_node}.outputs:renderProductPath", f"{info_node}.inputs:renderProductPath"),
+            ("ROS2Context.outputs:context", f"{rgb_node}.inputs:context"),
+            ("ROS2Context.outputs:context", f"{depth_node}.inputs:context"),
+            ("ROS2Context.outputs:context", f"{info_node}.inputs:context"),
+        ]
+        set_values += [
+            (f"{render_node}.inputs:cameraPrim", camera["prim_path"]),
+            (f"{render_node}.inputs:width", 640),
+            (f"{render_node}.inputs:height", 480),
+            (f"{rgb_node}.inputs:type", "rgb"),
+            (f"{rgb_node}.inputs:topicName", f"{camera['topic_prefix']}/rgb"),
+            (f"{rgb_node}.inputs:frameId", camera["frame_id"]),
+            (f"{depth_node}.inputs:type", "depth"),
+            (f"{depth_node}.inputs:topicName", f"{camera['topic_prefix']}/depth"),
+            (f"{depth_node}.inputs:frameId", camera["frame_id"]),
+            (f"{info_node}.inputs:topicName", f"{camera['topic_prefix']}/camera_info"),
+            (f"{info_node}.inputs:frameId", camera["frame_id"]),
+        ]
+
     og.Controller.edit(
         {"graph_path": "/ActionGraph", "evaluator_name": "execution"},
         {
-            og.Controller.Keys.CREATE_NODES: [
-                ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
-                ("ROS2Context", "isaacsim.ros2.bridge.ROS2Context"),
-                ("ROS2PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
-                ("ReadJointState", "isaacsim.sensors.physics.IsaacReadJointState"),
-                ("ROS2PublishJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
-                ("ROS2SubscribeJointState", "isaacsim.ros2.bridge.ROS2SubscribeJointState"),
-                ("ArticulationController", "isaacsim.core.nodes.IsaacArticulationController"),
-                ("ComputeGtTransformTree", "isaacsim.core.nodes.IsaacComputeTransformTree"),
-                ("ROS2PublishGtTransformTree", "isaacsim.ros2.bridge.ROS2PublishTransformTree"),
-                ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
-                ("CreateCameraRenderProduct", "isaacsim.core.nodes.IsaacCreateRenderProduct"),
-                ("ROS2PublishCameraRgb", "isaacsim.ros2.bridge.ROS2CameraHelper"),
-                ("ROS2PublishCameraDepth", "isaacsim.ros2.bridge.ROS2CameraHelper"),
-                ("ROS2PublishCameraInfo", "isaacsim.ros2.bridge.ROS2CameraInfoHelper"),
-            ],
-            og.Controller.Keys.CONNECT: [
-                ("OnPlaybackTick.outputs:tick", "ROS2PublishClock.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ReadJointState.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ROS2SubscribeJointState.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ArticulationController.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "ComputeGtTransformTree.inputs:execIn"),
-                ("OnPlaybackTick.outputs:tick", "CreateCameraRenderProduct.inputs:execIn"),
-                ("ReadJointState.outputs:execOut", "ROS2PublishJointState.inputs:execIn"),
-                ("ReadJointState.outputs:jointNames", "ROS2PublishJointState.inputs:jointNames"),
-                ("ReadJointState.outputs:jointPositions", "ROS2PublishJointState.inputs:jointPositions"),
-                ("ReadJointState.outputs:jointVelocities", "ROS2PublishJointState.inputs:jointVelocities"),
-                ("ReadJointState.outputs:jointEfforts", "ROS2PublishJointState.inputs:jointEfforts"),
-                ("ReadJointState.outputs:jointDofTypes", "ROS2PublishJointState.inputs:jointDofTypes"),
-                ("ReadJointState.outputs:sensorTime", "ROS2PublishJointState.inputs:sensorTime"),
-                ("ReadJointState.outputs:stageMetersPerUnit", "ROS2PublishJointState.inputs:stageMetersPerUnit"),
-                ("ComputeGtTransformTree.outputs:execOut", "ROS2PublishGtTransformTree.inputs:execIn"),
-                ("ComputeGtTransformTree.outputs:parentFrames", "ROS2PublishGtTransformTree.inputs:parentFrames"),
-                ("ComputeGtTransformTree.outputs:childFrames", "ROS2PublishGtTransformTree.inputs:childFrames"),
-                ("ComputeGtTransformTree.outputs:translations", "ROS2PublishGtTransformTree.inputs:translations"),
-                ("ComputeGtTransformTree.outputs:orientations", "ROS2PublishGtTransformTree.inputs:orientations"),
-                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraRgb.inputs:execIn"),
-                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraDepth.inputs:execIn"),
-                ("CreateCameraRenderProduct.outputs:execOut", "ROS2PublishCameraInfo.inputs:execIn"),
-                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraRgb.inputs:renderProductPath"),
-                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraDepth.inputs:renderProductPath"),
-                ("CreateCameraRenderProduct.outputs:renderProductPath", "ROS2PublishCameraInfo.inputs:renderProductPath"),
-                ("ROS2Context.outputs:context", "ROS2PublishClock.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2PublishJointState.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2SubscribeJointState.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2PublishGtTransformTree.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2PublishCameraRgb.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2PublishCameraDepth.inputs:context"),
-                ("ROS2Context.outputs:context", "ROS2PublishCameraInfo.inputs:context"),
-                ("ReadSimTime.outputs:simulationTime", "ROS2PublishGtTransformTree.inputs:timeStamp"),
-                ("ROS2SubscribeJointState.outputs:jointNames", "ArticulationController.inputs:jointNames"),
-                ("ROS2SubscribeJointState.outputs:positionCommand", "ArticulationController.inputs:positionCommand"),
-                ("ROS2SubscribeJointState.outputs:velocityCommand", "ArticulationController.inputs:velocityCommand"),
-                ("ROS2SubscribeJointState.outputs:effortCommand", "ArticulationController.inputs:effortCommand"),
-            ],
-            og.Controller.Keys.SET_VALUES: [
-                ("ReadJointState.inputs:prim", panda_prim_path),
-                ("ArticulationController.inputs:targetPrim", panda_prim_path),
-                ("ROS2PublishJointState.inputs:topicName", "/joint_states"),
-                ("ROS2SubscribeJointState.inputs:topicName", "/joint_command"),
-                ("ComputeGtTransformTree.inputs:targetPrims", [target_object_prim_path, camera_prim_path]),
-                ("ROS2PublishGtTransformTree.inputs:topicName", "/ground_truth/tf"),
-                ("CreateCameraRenderProduct.inputs:cameraPrim", camera_prim_path),
-                ("CreateCameraRenderProduct.inputs:width", 640),
-                ("CreateCameraRenderProduct.inputs:height", 480),
-                ("ROS2PublishCameraRgb.inputs:type", "rgb"),
-                ("ROS2PublishCameraRgb.inputs:topicName", "/sim_camera/rgb"),
-                ("ROS2PublishCameraRgb.inputs:frameId", "camera"),
-                ("ROS2PublishCameraDepth.inputs:type", "depth"),
-                ("ROS2PublishCameraDepth.inputs:topicName", "/sim_camera/depth"),
-                ("ROS2PublishCameraDepth.inputs:frameId", "camera"),
-                ("ROS2PublishCameraInfo.inputs:topicName", "/sim_camera/camera_info"),
-                ("ROS2PublishCameraInfo.inputs:frameId", "camera"),
-            ],
+            og.Controller.Keys.CREATE_NODES: create_nodes,
+            og.Controller.Keys.CONNECT: connect,
+            og.Controller.Keys.SET_VALUES: set_values,
         },
     )
 
@@ -198,10 +224,47 @@ def main():
     # 遠いため、workspace全体(0.5〜0.6m先)が近クリップ面の内側に入ってしまい何も描画されない。
     camera.set_clipping_ranges(near_distances=[0.01], far_distances=[10.0])
 
+    # 俯瞰カメラは奥行き信号が弱く、アームがカメラと物体の間を横切ると遮蔽されたキーポイントを
+    # 誤って高信頼度で出力し、姿勢推定が破綻することがある。手先(panda_hand)に追従する
+    # 第2のカメラを追加し、俯瞰カメラでの大まかな位置把握 -> 手先カメラでの近距離での
+    # 精緻化という2段階の姿勢推定を可能にする。
+    # translations/orientationsはpanda_handのローカル座標系での指定(positions/orientationsは
+    # world座標系になるため、親プリムに追従させるにはこちらを使う必要がある)。
+    #
+    # panda_handの中心軸(ローカルZ)はグリッパー自身の指が伸びる軸と重なるため、そこにオフセット
+    # して真下を向かせると指の表面しか映らない。UsdGeom.BBoxCacheで計測したpanda_hand/
+    # panda_leftfinger/panda_rightfingerのローカル座標系での範囲では、指の開閉軸はローカルYで
+    # (指はY=±0.04・X=±0.025・Z=0.06〜0.11)、hand本体はZ<0.066までしか無い。そのため
+    # ローカルX方向(開閉軸と直交・hand本体の外)へオフセットし、Zは指の付け根より少し先
+    # (0.08、hand本体の外・指先より手前)に置くことで、hand本体・指のどちらとも干渉しない
+    # 位置を確保している。向きは素直な真下(panda_handのローカルZ+方向)のまま。
+    # 俯瞰カメラの既定画角(23.6度)は近距離でのオフセットに対する許容度が低すぎるため、
+    # 手先カメラだけ焦点距離を短くして画角を広げ、位置ずれに対する頑健性を確保する。
+    wrist_camera = Camera(
+        paths="/World/panda/panda_hand/wrist_camera",
+        translations=np.array([[0.05, 0.0, 0.08]]),
+        orientations=np.array([[0.0, 1.0, 0.0, 0.0]]),
+    )
+    wrist_camera.set_clipping_ranges(near_distances=[0.01], far_distances=[10.0])
+    wrist_camera.set_focal_lengths(focal_lengths=[1.2])
+
     build_action_graph(
         panda_prim_path="/World/panda",
         target_object_prim_path="/World/target_object",
-        camera_prim_path="/World/camera",
+        cameras=[
+            {
+                "prim_path": "/World/camera",
+                "node_prefix": "overhead",
+                "topic_prefix": "/sim_camera",
+                "frame_id": "camera",
+            },
+            {
+                "prim_path": "/World/panda/panda_hand/wrist_camera",
+                "node_prefix": "wrist",
+                "topic_prefix": "/sim_wrist_camera",
+                "frame_id": "wrist_camera",
+            },
+        ],
     )
 
     omni.timeline.get_timeline_interface().play()

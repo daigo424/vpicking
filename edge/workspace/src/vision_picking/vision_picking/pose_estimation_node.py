@@ -4,11 +4,17 @@
 yolo_pose.pyが学習したモデルでRGB画像から物体の2Dキーポイントを検出し、
 <MODEL_DIR>/object_3d_keypoints.json(物体ローカル座標での8頂点定義)と
 組み合わせてcv2.solvePnP()で6D Poseを求める。モデル重み・キーポイント定義はどちらも
-学習のたびに結果が変わりうるため、再現性のため気に入ったバージョンだけをdata/models/以下に
-git管理下で保持している(それ以外の学習結果はdata/train-models/にローカルのみで残る)。
+学習のたびに結果が変わりうるため、再現性のため気に入ったバージョンだけをdata/<camera>/models/以下に
+git管理下で保持している(それ以外の学習結果はdata/<camera>/train-models/にローカルのみで残る)。
 gt_tf_publisher_node/pose_estimation_node_classical_cvと全く同じworld -> target_objectの
 TFを/tfへ配信することで、picking_controller_node側のコードを変更せずに認識方式を
 差し替えられるようにする。
+
+CAMERA_NAMESPACE環境変数で、俯瞰カメラ(既定値"camera")・手先カメラ("wrist_camera"等)の
+どちらでも同じスクリプトを使い回せる(camera_bridge_node.pyが中継するトピック名・frame_idの
+命名規則に合わせている)。粗検出(俯瞰)・精緻検出(手先)を同時に動かして両方の結果を
+区別したい場合は、TARGET_FRAME_OUT環境変数で出力先のTF子フレーム名も分ける
+(例: target_object_coarse / target_object_fine)。
 """
 
 import json
@@ -31,19 +37,30 @@ from common.transforms import transform_to_matrix
 from vision_picking.common import safe_spin
 
 WORLD_FRAME = "world"
-CAMERA_FRAME = "camera"
-TARGET_FRAME = "target_object"
-RGB_TOPIC = "/camera/rgb/image_raw"
-CAMERA_INFO_TOPIC = "/camera/camera_info"
+# camera_bridge_node.pyの中継先(/{namespace}/rgb/image_raw等、frame_id={namespace})と
+# 命名規則を揃えている。
+CAMERA_NAMESPACE = os.environ.get("CAMERA_NAMESPACE", "camera")
+CAMERA_FRAME = CAMERA_NAMESPACE
+RGB_TOPIC = f"/{CAMERA_NAMESPACE}/rgb/image_raw"
+CAMERA_INFO_TOPIC = f"/{CAMERA_NAMESPACE}/camera_info"
+# 俯瞰(粗検出)・手先(精緻検出)を同時に動かす場合に出力先を区別できるようにする。
+TARGET_FRAME = os.environ.get("TARGET_FRAME_OUT", "target_object")
+# 同時に2インスタンス動かす場合にROS2ノード名が衝突しないよう、既定(俯瞰カメラ)以外は
+# サフィックスを付ける。俯瞰カメラ単独運用時の既存の挙動(ノード名)は変えない。
+NODE_NAME = "pose_estimation_node" if CAMERA_NAMESPACE == "camera" else f"pose_estimation_node_{CAMERA_NAMESPACE}"
 
-# MODEL_VERSION環境変数(make vp-run-yolo VER=v1等)でどの学習結果を使うか切り替える。
-# 未指定時はv1(data/models/、git管理下のpush済みモデル)を使う。"train:"で始まる場合は
-# data/train-models/(ローカルのみ・push前の学習直後の結果)を指す。
+# data/以下はカメラ(overhead-camera/wrist-camera)ごとに分かれているため、
+# CAMERA_NAMESPACEから対応するディレクトリ名を導出する。
+_MODEL_CAMERA_DIR = "overhead-camera" if CAMERA_NAMESPACE == "camera" else "wrist-camera"
+
+# MODEL_VERSION環境変数(make vp-run-yolo VER_COARSE=v1等)でどの学習結果を使うか切り替える。
+# 未指定時はv1(data/<camera>/models/、git管理下のpush済みモデル)を使う。"train:"で始まる場合は
+# data/<camera>/train-models/(ローカルのみ・push前の学習直後の結果)を指す。
 _MODEL_VERSION = os.environ.get("MODEL_VERSION", "v1")
 if _MODEL_VERSION.startswith("train:"):
-    _MODEL_DIR = f"/data/train-models/{_MODEL_VERSION[len('train:'):]}"
+    _MODEL_DIR = f"/data/{_MODEL_CAMERA_DIR}/train-models/{_MODEL_VERSION[len('train:'):]}"
 else:
-    _MODEL_DIR = f"/data/models/{_MODEL_VERSION}"
+    _MODEL_DIR = f"/data/{_MODEL_CAMERA_DIR}/models/{_MODEL_VERSION}"
 MODEL_PATH = _MODEL_DIR + "/best.pt"
 OBJECT_KEYPOINTS_PATH = _MODEL_DIR + "/object_3d_keypoints.json"
 
@@ -73,7 +90,7 @@ STABILITY_TOLERANCE_M = 0.01
 
 class PoseEstimationNode(Node):
     def __init__(self) -> None:
-        super().__init__("pose_estimation_node")
+        super().__init__(NODE_NAME)
         self._bridge = CvBridge()
         self._camera_info: CameraInfo | None = None
         self._tf_buffer = Buffer()
@@ -117,9 +134,16 @@ class PoseEstimationNode(Node):
         camera_matrix = np.array(self._camera_info.k, dtype=np.float64).reshape(3, 3)
         dist_coeffs = np.array(self._camera_info.d, dtype=np.float64) if self._camera_info.d else np.zeros(5)
 
-        ok, rvec, tvec = cv2.solvePnP(
-            self._object_points[valid], image_points[valid], camera_matrix, dist_coeffs
-        )
+        try:
+            # cv2.solvePnP()はデフォルト(SOLVEPNP_ITERATIVE)手法内部のDLT初期化が、
+            # 有効点数によっては(4点以上でもMIN_KEYPOINTS_FOR_PNPを満たしていても)
+            # cv2.errorを送出することがある(ok=Falseを返さずに例外になる)ため、
+            # 検出不良の1フレームとして扱いスキップする。
+            ok, rvec, tvec = cv2.solvePnP(
+                self._object_points[valid], image_points[valid], camera_matrix, dist_coeffs
+            )
+        except cv2.error:
+            return
         if not ok:
             return
 

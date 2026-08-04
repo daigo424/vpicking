@@ -20,6 +20,8 @@ ros-jazzy-ros2-control = ">=4.43.0,<5"
 ros-jazzy-ros2-controllers = ">=4.37.0,<5"
 ros-jazzy-rmw-fastrtps-cpp = "*"
 ros-jazzy-foxglove-bridge = "*"
+ros-jazzy-py-trees = "*"
+ros-jazzy-py-trees-ros = "*"
 ros-jazzy-tf2-ros = "*"
 ros-jazzy-tf-transformations = "*"
 opencv = ">=4.8.0"
@@ -176,8 +178,9 @@ gt_tf_publisher_node = { cmd = "ros2 run vision_picking gt_tf_publisher_node", d
 picking_controller_node = { cmd = "ros2 run vision_picking picking_controller_node", description = "moveit_pyでアプローチ→下降→把持→上昇→プレイスを実行するピッキングコントローラ" }
 camera_bridge_node = { cmd = "ros2 run vision_picking camera_bridge_node", description = "Isaac Sim側の/sim_camera/*を認識ノード向けの安定したトピック名(/camera/*)へ中継する" }
 pose_estimation_node_classical_cv = { cmd = "ros2 run vision_picking pose_estimation_node_classical_cv", description = "深度点群のセグメンテーション+重心/主軸推定でtarget_objectのworld -> target_objectのTFを配信する(古典的CV版)" }
+foxglove_bridge = { cmd = "ros2 launch foxglove_bridge foxglove_bridge_launch.xml", description = "Foxglove StudioからWebSocket経由でカメラ画像・TF等を可視化するためのbridgeを起動" }
 pose_estimation_node = { cmd = "ros2 run vision_picking pose_estimation_node", description = "YOLO11-Pose+PnPでtarget_objectのworld -> target_objectのTFを配信する(本番版)" }
-cube_only = { cmd = "python scripts/dataset/cube_only.py", description = "Pandaアームを含まないキューブのみの孤立した合成シーンでデータセット(YOLO Poseラベル/pose_gt.json/object_3d_keypoints.json)を/data/datasetに生成する" }
+cube_only = { cmd = "python scripts/dataset/cube_only.py", description = "Pandaアームを含まないキューブのみの孤立した合成シーンでデータセット(YOLO Poseラベル/pose_gt.json/object_3d_keypoints.json)を--output-dir(data/<camera>/dataset/<version>)に生成する" }
 yolo_pose = { cmd = "python scripts/train/yolo_pose.py", description = "データセットでYOLO11-Poseを学習する" }
 picking_session = { cmd = "python scripts/dataset/picking_session.py", description = "vp-run-gt実行中のPandaアーム込みの実カメラ画像+GT姿勢からYOLO11-Pose学習用データを記録する(要:別途vp-run-gt起動)" }
-split_dataset = { cmd = "python scripts/dataset/split_dataset.py", description = "/data/datasetを物体姿勢の重複を跨がない形でtrain/valに分割し、dataset.yamlを更新する(データ収集後・学習前に1回実行)" }
+split_dataset = { cmd = "python scripts/dataset/split_dataset.py", description = "--dataset-dir(data/<camera>/dataset/<version>)を物体姿勢の重複を跨がない形でtrain/valに分割し、dataset.yamlを更新する(データ収集後・学習前に1回実行)" }
