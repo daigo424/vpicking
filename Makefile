@@ -1,4 +1,4 @@
-.PHONY: up build test build-test new-launch-pkg rviz rviz-flat dataset train dataset-split dataset-collect-picking-session dataset-collect-wrist-picking-session model-promote
+.PHONY: up build new-launch-pkg dataset train dataset-split dataset-collect-picking-session dataset-collect-wrist-picking-session dataset-collect-wrist-jitter model-promote vp-run-yolo-latest-train vp-run-yolo-latest-models
 
 COMPOSE_PJ_NAME    := vpicking
 # WSL2かネイティブLinuxかでGPUパススルーの構成が別物になる(edge/docker/docker-compose.gpu-*.yml参照)
@@ -117,6 +117,14 @@ dataset-collect-picking-session:
 dataset-collect-wrist-picking-session:
 	@bash scripts/collect_wrist_picking_session_dataset.sh $(ITERATIONS) $(FRAMES)
 
+# 上記の自然なピック軌道の記録だけだと、手先カメラの取り付けオフセットの影響で物体が
+# 画像内の同じような位置にしか写らないデータに偏る(labels.jpgで実測確認済み)ため、
+# アームを物体近傍のランダムな相対位置・向きへ直接動かしながら撮る方式で補う。
+JITTER_ITERATIONS ?= 10
+JITTER_FRAMES     ?= 30
+dataset-collect-wrist-jitter:
+	@bash scripts/collect_wrist_jitter_dataset.sh $(JITTER_ITERATIONS) $(JITTER_FRAMES)
+
 # 気に入った学習結果を data/<camera>/train-models/<VER>/(ローカルのみ)から
 # data/<camera>/models/(git管理下・push対象)へ昇格させる。data/<camera>/models/側は
 # 「pushしたモデルの通し番号」として独立に採番する(train-models側の番号をそのまま使い回さない)。
@@ -171,3 +179,18 @@ vp-run-yolo:
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VF CAMERA_NAMESPACE=wrist_camera TARGET_FRAME_OUT=target_object_fine pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
 	trap '$(COMPOSE) exec -T $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
+
+# vp-run-yolo-latest-train/vp-run-yolo-latest-models: select_version.shの対話選択を省略し、
+# data/<camera>/train-models/(ローカルのみ・push前)またはdata/<camera>/models/(git管理・
+# push済み)それぞれの最新バージョンを俯瞰・手先の両方に自動で使ってvp-run-yoloを起動する。
+vp-run-yolo-latest-train:
+	@VC=$$(bash scripts/latest_version_dir.sh data/overhead-camera/train-models); \
+	VF=$$(bash scripts/latest_version_dir.sh data/wrist-camera/train-models); \
+	echo "俯瞰: train:$$VC / 手先: train:$$VF"; \
+	$(MAKE) vp-run-yolo VER_COARSE=train:$$VC VER_FINE=train:$$VF
+
+vp-run-yolo-latest-models:
+	@VC=$$(bash scripts/latest_version_dir.sh data/overhead-camera/models); \
+	VF=$$(bash scripts/latest_version_dir.sh data/wrist-camera/models); \
+	echo "俯瞰: $$VC / 手先: $$VF"; \
+	$(MAKE) vp-run-yolo VER_COARSE=$$VC VER_FINE=$$VF
