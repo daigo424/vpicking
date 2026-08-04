@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # make vp-pose-estimation/vp-run-yoloでVERが未指定の時に、モデルの取得元
-# (data/train-models/: ローカルのみ・push前の学習直後の結果 / data/models/: git管理下の
-# push済みモデル)とバージョンを対話式で選ばせる。selectのメニュー・プロンプトは
-# 標準エラーに出るため、呼び出し側で$(...)からstdoutだけを拾っても選択画面は表示される。
+# (data/<camera>/train-models/: ローカルのみ・push前の学習直後の結果 /
+# data/<camera>/models/: git管理下のpush済みモデル)とバージョンを対話式で選ばせる。
+# selectのメニュー・プロンプトは標準エラーに出るため、呼び出し側で$(...)から
+# stdoutだけを拾っても選択画面は表示される。
 set -euo pipefail
+
+# 俯瞰(粗検出)・手先(精緻検出)のように複数モデルを選ばせる場面で、どちらの選択かを
+# 区別できるよう、呼び出し側から任意のラベルを第1引数で渡せるようにする。
+LABEL="${1:-}"
+if [ -n "$LABEL" ]; then
+    echo "=== ${LABEL}のモデルを選択します ===" >&2
+fi
+CAMERA_DIR="${2:?使い方: select_version.sh <label> <overhead-camera|wrist-camera>}"
 
 PS3="モデルの取得元を選んでください: "
 select source in "train-models(ローカルのみ・push前)" "models(git管理・push済み)"; do
     case "${REPLY:-}" in
-        1) DIR="data/train-models"; PREFIX="train:"; break ;;
-        2) DIR="data/models"; PREFIX=""; break ;;
+        1) DIR="data/$CAMERA_DIR/train-models"; PREFIX="train:"; break ;;
+        2) DIR="data/$CAMERA_DIR/models"; PREFIX=""; break ;;
         *) echo "番号を選んでください" >&2 ;;
     esac
 done

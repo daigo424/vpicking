@@ -3,12 +3,16 @@
 # 1回のシム実行あたりのフレーム数を絞る代わりにイテレーション数(=ランダム配置のバリエーション数)を
 # 増やす設計にしている。物体はピック中の一瞬しか姿勢が変化せず、1回のシム実行内で
 # フレーム数を稼いでもほぼ同一姿勢の重複フレームが増えるだけで、姿勢の多様性には寄与しないため。
-# /data/datasetを作り直す。
+# 実行のたびにdata/overhead-camera/dataset/配下へ新しいバージョンディレクトリを採番する
+# (過去の収集結果は消さずに積み上げる)。
 set -uo pipefail
 
 ITERATIONS="${1:-40}"
 FRAMES_PER_RUN="${2:-8}"
-OUTPUT_DIR="/data/dataset"
+# data/はdocker-compose.local.ymlで../../data:/dataとバインドマウントされているため、
+# ホスト上のこのスクリプトから直接次バージョンを採番できる。
+VERSION=$(bash "$(dirname "$0")/next_version_dir.sh" "data/overhead-camera/dataset")
+OUTPUT_DIR="/data/overhead-camera/dataset/$VERSION"
 # カメラは(0.5, 0.0, 0.8)固定・真下向きで、実測画角(fx=fy=1527px, キューブ上面までの
 # 距離0.75m)は約31cm x 24cm。yaw回転時のキューブ最大到達距離(対角の半分、約3.5cm)と
 # 1cmの安全マージンを差し引いた、中心が確実に画角内に収まる範囲が以下。
@@ -18,6 +22,8 @@ X_MAX=0.612
 Y_MIN=-0.073
 Y_MAX=0.073
 
+echo "出力先: $OUTPUT_DIR"
+
 cleanup() {
     docker exec edge_container pkill -9 -f "run_simulation.py" >/dev/null 2>&1
     docker exec edge_container pkill -9 -f "vision_picking/lib/vision_picking/gt_tf_publisher_node" >/dev/null 2>&1
@@ -26,8 +32,6 @@ cleanup() {
     docker exec edge_container pkill -9 -f "picking_session.py" >/dev/null 2>&1
     sleep 1
 }
-
-docker exec edge_container bash -c "rm -rf $OUTPUT_DIR" >/dev/null 2>&1
 
 for i in $(seq 0 $((ITERATIONS - 1))); do
     cleanup

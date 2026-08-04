@@ -5,6 +5,11 @@
 run_simulation.py側のROS2PublishTransformTreeは/ground_truth/tf(このノード専用の入力)に
 publishしており、最終的な/tfには直接publishしない。認識方式を変える場合でも
 world -> target_objectを/tfに配信するノードを差し替えるだけで済むようにするため。
+
+picking_controller_node.pyは粗検出(target_object_coarse)・精緻検出(target_object_fine)の
+2つのTFを要求するようになったため、真値には両者の区別が無いことを踏まえ、同じ姿勢を
+target_object_coarse/target_object_fineにも配信する(target_objectへの配信はpicking_session.py
+のデータ収集が依存しているため維持する)。
 """
 
 from geometry_msgs.msg import TransformStamped
@@ -17,6 +22,7 @@ from vision_picking.common import safe_spin
 GROUND_TRUTH_TOPIC = "/ground_truth/tf"
 PARENT_FRAME = "world"
 CHILD_FRAME = "target_object"
+CHILD_FRAMES_OUT = [CHILD_FRAME, "target_object_coarse", "target_object_fine"]
 
 
 class GtTfPublisherNode(Node):
@@ -30,12 +36,13 @@ class GtTfPublisherNode(Node):
         for transform in msg.transforms:
             if CHILD_FRAME not in transform.child_frame_id:
                 continue
-            out = TransformStamped()
-            out.header.stamp = self.get_clock().now().to_msg()
-            out.header.frame_id = PARENT_FRAME
-            out.child_frame_id = CHILD_FRAME
-            out.transform = transform.transform
-            self._broadcaster.sendTransform(out) # /tfにpublish
+            for child_frame in CHILD_FRAMES_OUT:
+                out = TransformStamped()
+                out.header.stamp = self.get_clock().now().to_msg()
+                out.header.frame_id = PARENT_FRAME
+                out.child_frame_id = child_frame
+                out.transform = transform.transform
+                self._broadcaster.sendTransform(out) # /tfにpublish
 
 
 def main() -> None:

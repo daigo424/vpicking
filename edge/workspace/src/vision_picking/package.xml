@@ -19,6 +19,8 @@
   <depend>moveit_resources_panda_moveit_config</depend>
   <depend>cv_bridge</depend>
   <depend>tf_transformations</depend>
+  <depend>py_trees</depend>
+  <depend>py_trees_ros</depend>
   <depend>common</depend>
 
   <test_depend>ament_copyright</test_depend>

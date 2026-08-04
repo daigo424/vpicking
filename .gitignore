@@ -43,8 +43,16 @@ runs/*
 docs/**/*.bkp
 
 # 学習のたびに結果が変わる都合上、動作確認済みのモデル重み・キーポイント定義だけは
-# バージョンディレクトリ単位(data/models/<VER>/)で再現性のためgit管理下に置く。
-!data/models/
+# バージョンディレクトリ単位(data/<camera>/models/<VER>/)で再現性のためgit管理下に置く。
+# 親ディレクトリが除外されたままだとgitignoreは子の再包含ルールへ辿り着けないため、
+# data/<camera>/自体をいったん再包含し、その配下を再度除外してからmodels/だけを再包含する。
+!data/overhead-camera/
+data/overhead-camera/*
+!data/overhead-camera/models/
+
+!data/wrist-camera/
+data/wrist-camera/*
+!data/wrist-camera/models/
 
 # YOLOの学習成果物・自動ダウンロードされる事前学習済み重み
 # (train_yolo_pose.pyが/workspace=edge/workspace直下に生成・取得する)

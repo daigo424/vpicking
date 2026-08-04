@@ -488,6 +488,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/noarch/plotly-6.9.0-pyhd8ed1ab_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/ply-3.11-pyhd8ed1ab_3.conda
+      - conda: https://prefix.dev/conda-forge/noarch/py-trees-2.5.0-pyhcf101f3_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/pybind11-3.0.3-pyhfe8187e_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/pybind11-abi-11-hc364b38_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/pybind11-global-3.0.3-pyh648e204_0.conda
@@ -743,6 +744,9 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-point-cloud-transport-4.0.7-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-pose-broadcaster-4.40.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-position-controllers-4.40.0-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-2.5.0-py312h24bf083_19.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-ros-2.4.0-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-ros-interfaces-2.1.1-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-pybind11-vendor-3.1.3-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-python-cmake-module-0.11.1-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-python-orocos-kdl-vendor-0.5.1-np2py312h2ed9cc7_18.conda
@@ -1604,7 +1608,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/coverage?source=compressed-mapping
+  - pkg:pypi/coverage?source=hash-mapping
   run_exports: {}
   size: 393169
   timestamp: 1784150236479
@@ -5483,7 +5487,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/msgpack?source=compressed-mapping
+  - pkg:pypi/msgpack?source=hash-mapping
   run_exports: {}
   size: 112800
   timestamp: 1782460774570
@@ -5982,7 +5986,7 @@ packages:
   - libwebp-base >=1.6.0,<2.0a0
   license: HPND
   purls:
-  - pkg:pypi/pillow?source=compressed-mapping
+  - pkg:pypi/pillow?source=hash-mapping
   run_exports: {}
   size: 1064129
   timestamp: 1782912080163
@@ -6047,7 +6051,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/propcache?source=compressed-mapping
+  - pkg:pypi/propcache?source=hash-mapping
   run_exports: {}
   size: 51586
   timestamp: 1780037816755
@@ -7711,7 +7715,7 @@ packages:
   license: PSF-2.0
   license_family: PSF
   purls:
-  - pkg:pypi/aiohappyeyeballs?source=compressed-mapping
+  - pkg:pypi/aiohappyeyeballs?source=hash-mapping
   run_exports: {}
   size: 24690
   timestamp: 1782986823268
@@ -8767,6 +8771,20 @@ packages:
   run_exports: {}
   size: 49052
   timestamp: 1733239818090
+- conda: https://prefix.dev/conda-forge/noarch/py-trees-2.5.0-pyhcf101f3_0.conda
+  sha256: 5171aa1c3dca058f83b9219a7e05dcb27946bb584f72ae6713c7ac44066d34c1
+  md5: dc9be9ab74e7d55070144287e0a30a28
+  depends:
+  - python >=3.10
+  - pydot >=1.4
+  - python
+  license: BSD-3-Clause
+  license_family: BSD
+  purls:
+  - pkg:pypi/py-trees?source=hash-mapping
+  run_exports: {}
+  size: 110475
+  timestamp: 1784040360696
 - conda: https://prefix.dev/conda-forge/noarch/pybind11-3.0.3-pyhfe8187e_0.conda
   sha256: 71a9524f44d6ac6304feae71e2bbe8d8ce0816f0be7a0271c15681ad1040965d
   md5: e0f4549ccb507d4af8ed5c5345210673
@@ -9202,7 +9220,7 @@ packages:
   - pytest >=7
   license: MIT
   purls:
-  - pkg:pypi/typeguard?source=compressed-mapping
+  - pkg:pypi/typeguard?source=hash-mapping
   run_exports: {}
   size: 38525
   timestamp: 1785075519409
@@ -14213,6 +14231,71 @@ packages:
   run_exports: {}
   size: 76559
   timestamp: 1782331396362
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-2.5.0-py312h24bf083_19.conda
+  sha256: 90423028dad91c505d052ceb2588bacab15dd794623932801460e6be80bef03d
+  md5: ff5390ae15384d896ae111f660527cd1
+  depends:
+  - py-trees >=2.5.0,<2.5.1a0
+  - pydot
+  - python
+  - ros-jazzy-ros-workspace
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 7562
+  timestamp: 1784362332218
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-ros-2.4.0-np2py312h2ed9cc7_18.conda
+  sha256: 2667073fc8fb8429dc7f4833b8bc4c8c3a15ca635bd9c28d0d8fbee915bfb02b
+  md5: eaa7a4dfec8e49985302c3f7fca5acdd
+  depends:
+  - python
+  - ros-jazzy-geometry-msgs
+  - ros-jazzy-py-trees
+  - ros-jazzy-py-trees-ros-interfaces
+  - ros-jazzy-rcl-interfaces
+  - ros-jazzy-rclpy
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-ros2topic
+  - ros-jazzy-sensor-msgs
+  - ros-jazzy-std-msgs
+  - ros-jazzy-std-srvs
+  - ros-jazzy-tf2-ros-py
+  - ros-jazzy-unique-identifier-msgs
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - libstdcxx >=14
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - python_abi 3.12.* *_cp312
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 156423
+  timestamp: 1784362458959
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-py-trees-ros-interfaces-2.1.1-np2py312h2ed9cc7_18.conda
+  sha256: 3e1fde1c3f95dd77415d6b2c650057b45c17839082cf577e69c8b0f8738c3c34
+  md5: 69fdde1eb3996a891701108fdd8b5c7b
+  depends:
+  - python
+  - ros-jazzy-action-msgs
+  - ros-jazzy-diagnostic-msgs
+  - ros-jazzy-geometry-msgs
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-rosidl-default-runtime
+  - ros-jazzy-unique-identifier-msgs
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - numpy >=1.25,<3
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 840875
+  timestamp: 1784099616663
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-pybind11-vendor-3.1.3-np2py312h2ed9cc7_18.conda
   sha256: e470fb6a94cd8eb481068ec9bf2396f246faf1da08ea372bb85314f167a895df
   md5: d1c062de724a94642f5cb510c753762b

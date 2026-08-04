@@ -5,6 +5,10 @@ gt_tf_publisher_nodeと全く同じworld -> target_objectのTFを/tfへ配信す
 picking_controller_node側のコードを変更せずに認識方式を差し替えられるようにする。
 学習済みモデルの代わりに、テーブル面との深度差でtarget_objectを分離する軽量な
 古典的CV手法を使う。
+
+picking_controller_node.pyは粗検出(target_object_coarse)・精緻検出(target_object_fine)の
+2つのTFを要求するようになったため、単一の推定値をこの2つのフレームにも同じ姿勢で配信する
+(このノードは俯瞰カメラ1台だけを見ており、粗・精緻の区別が無いため)。
 """
 
 import numpy as np
@@ -26,6 +30,7 @@ from vision_picking.common import safe_spin
 WORLD_FRAME = "world"
 CAMERA_FRAME = "camera"
 TARGET_FRAME = "target_object"
+TARGET_FRAMES_OUT = [TARGET_FRAME, "target_object_coarse", "target_object_fine"]
 DEPTH_TOPIC = "/camera/depth/image_raw"
 CAMERA_INFO_TOPIC = "/camera/camera_info"
 
@@ -118,22 +123,23 @@ class PoseEstimationClassicalCvNode(Node):
         translation = world_to_object_mat[:3, 3]
         qx, qy, qz, qw = quaternion_from_matrix(world_to_object_mat)
 
-        out = TransformStamped()
-        out.header.stamp = self.get_clock().now().to_msg()
-        out.header.frame_id = WORLD_FRAME
-        out.child_frame_id = TARGET_FRAME
-        out.transform.translation.x = float(translation[0])
-        out.transform.translation.y = float(translation[1])
-        # 深度カメラは物体の上面しか観測できないが、picking_controller_nodeはtarget_objectの
-        # フレーム原点を物体の重心として掴みに行く高さを計算している。上面の重心をそのまま
-        # 使うと指が物体の上端しか捉えられず把持に失敗するため、物体サイズの半分だけ
-        # 下げて重心相当の高さに補正する。
-        out.transform.translation.z = float(translation[2]) - TARGET_OBJECT_SIZE_M / 2.0
-        out.transform.rotation.x = qx
-        out.transform.rotation.y = qy
-        out.transform.rotation.z = qz
-        out.transform.rotation.w = qw
-        self._broadcaster.sendTransform(out)
+        for target_frame in TARGET_FRAMES_OUT:
+            out = TransformStamped()
+            out.header.stamp = self.get_clock().now().to_msg()
+            out.header.frame_id = WORLD_FRAME
+            out.child_frame_id = target_frame
+            out.transform.translation.x = float(translation[0])
+            out.transform.translation.y = float(translation[1])
+            # 深度カメラは物体の上面しか観測できないが、picking_controller_nodeはtarget_objectの
+            # フレーム原点を物体の重心として掴みに行く高さを計算している。上面の重心をそのまま
+            # 使うと指が物体の上端しか捉えられず把持に失敗するため、物体サイズの半分だけ
+            # 下げて重心相当の高さに補正する。
+            out.transform.translation.z = float(translation[2]) - TARGET_OBJECT_SIZE_M / 2.0
+            out.transform.rotation.x = qx
+            out.transform.rotation.y = qy
+            out.transform.rotation.z = qz
+            out.transform.rotation.w = qw
+            self._broadcaster.sendTransform(out)
 
 
 def main() -> None:
