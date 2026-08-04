@@ -22,6 +22,7 @@ import time
 import py_trees
 import py_trees_ros
 import rclpy
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 
 from vision_picking.picking_behaviours import (
     AttachTarget,
@@ -48,6 +49,44 @@ from vision_picking.picking_robot_interface import (
 TICK_PERIOD_SEC = 0.1
 TREE_SETUP_TIMEOUT_SEC = 15.0
 
+# Foxglove StudioのDiagnosticsパネルが標準で購読する"/diagnostics"に、
+# 各behaviourの実行状況をpy_treesのStatusから変換して配信する。
+DIAGNOSTICS_TOPIC = "/diagnostics"
+_DIAGNOSTIC_LEVEL = {
+    py_trees.common.Status.SUCCESS: DiagnosticStatus.OK,
+    py_trees.common.Status.RUNNING: DiagnosticStatus.WARN,
+    py_trees.common.Status.FAILURE: DiagnosticStatus.ERROR,
+    py_trees.common.Status.INVALID: DiagnosticStatus.STALE,
+}
+
+
+def _publish_diagnostics(
+    node: rclpy.node.Node, publisher, root: py_trees.behaviour.Behaviour
+) -> None:
+    msg = DiagnosticArray()
+    msg.header.stamp = node.get_clock().now().to_msg()
+
+    overall = DiagnosticStatus()
+    overall.hardware_id = "picking_controller_node"
+    overall.name = "picking_controller: 全体"
+    overall.level = _DIAGNOSTIC_LEVEL.get(root.status, DiagnosticStatus.STALE)
+    overall.message = root.status.name
+    msg.status.append(overall)
+
+    # Sequence自体(root)の状態はoverallで表現済みのため、composite自身は除外し
+    # 葉のbehaviourだけを個別のステップとして列挙する。
+    for behaviour in root.iterate():
+        if isinstance(behaviour, py_trees.composites.Composite):
+            continue
+        status = DiagnosticStatus()
+        status.hardware_id = "picking_controller_node"
+        status.name = f"picking_controller: {behaviour.name}"
+        status.level = _DIAGNOSTIC_LEVEL.get(behaviour.status, DiagnosticStatus.STALE)
+        status.message = behaviour.status.name
+        msg.status.append(status)
+
+    publisher.publish(msg)
+
 
 def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
     return py_trees.composites.Sequence(
@@ -71,6 +110,29 @@ def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
                 "精緻検出待ち", interface, target_frame=FINE_TARGET_FRAME, blackboard_key="fine_pose"
             ),
             RemoveCollisionObject("下降前に衝突オブジェクト除去", interface),
+            # coarse(俯瞰)とfine(手先)の推定yawはズレうるため、プレアプローチ高さのまま
+            # fine姿勢へ合わせ直す。1回のMoveToで回転・水平移動・下降をまとめて行うと、
+            # OMPLは各関節を同時に動かす軌道を返すため回転と並進が混ざり、指が物体に
+            # 近い高さで回転しながら動くことになって物体や台にひっかかりやすい。
+            # 「その場で回転(位置はcoarse姿勢のまま)」→「水平移動(向きはfineのまま)」→
+            # 「垂直下降(向き・水平位置ともに変えない)」の3段階に分け、各段階で
+            # 変化させるのを位置か向きのどちらか一方だけにする。
+            MoveTo(
+                "その場で姿勢合わせ",
+                interface,
+                height_offset=APPROACH_HEIGHT,
+                log_label="その場で姿勢合わせ",
+                position_key="coarse_pose",
+                orientation_key="fine_pose",
+            ),
+            MoveTo(
+                "精緻位置へ水平移動",
+                interface,
+                height_offset=APPROACH_HEIGHT,
+                log_label="精緻位置へ水平移動",
+                position_key="fine_pose",
+                orientation_key="fine_pose",
+            ),
             MoveTo(
                 "下降",
                 interface,
@@ -146,10 +208,12 @@ def main() -> None:
     root = build_tree(interface)
     tree = py_trees_ros.trees.BehaviourTree(root=root)
     tree.setup(node=node, timeout=TREE_SETUP_TIMEOUT_SEC)
+    diagnostics_pub = node.create_publisher(DiagnosticArray, DIAGNOSTICS_TOPIC, 10)
 
     try:
         while rclpy.ok() and root.status not in (py_trees.common.Status.SUCCESS, py_trees.common.Status.FAILURE):
             tree.tick()
+            _publish_diagnostics(node, diagnostics_pub, root)
             time.sleep(TICK_PERIOD_SEC)
     finally:
         # spin_threadがexecutorをスピンしたままmoveit_py.shutdown()/destroy_node()を呼ぶと、

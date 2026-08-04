@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
+from foxglove_msgs.msg import Color, ImageAnnotations, Point2, PointsAnnotation
 from geometry_msgs.msg import TransformStamped
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo, Image
@@ -43,6 +44,12 @@ CAMERA_NAMESPACE = os.environ.get("CAMERA_NAMESPACE", "camera")
 CAMERA_FRAME = CAMERA_NAMESPACE
 RGB_TOPIC = f"/{CAMERA_NAMESPACE}/rgb/image_raw"
 CAMERA_INFO_TOPIC = f"/{CAMERA_NAMESPACE}/camera_info"
+# Foxglove StudioのImageパネルで/rgb/image_rawに重ねて表示できる2D注釈(検出キーポイント・
+# PnP再投影点)を配信する。デバッグ用で認識パイプライン自体はこのトピックを購読しない。
+ANNOTATIONS_TOPIC = f"/{CAMERA_NAMESPACE}/rgb/annotations"
+DETECTED_KEYPOINT_COLOR = Color(r=0.2, g=1.0, b=0.2, a=1.0)
+LOW_CONFIDENCE_KEYPOINT_COLOR = Color(r=1.0, g=0.2, b=0.2, a=0.8)
+REPROJECTED_POINT_COLOR = Color(r=0.2, g=0.6, b=1.0, a=1.0)
 # 俯瞰(粗検出)・手先(精緻検出)を同時に動かす場合に出力先を区別できるようにする。
 TARGET_FRAME = os.environ.get("TARGET_FRAME_OUT", "target_object")
 # 同時に2インスタンス動かす場合にROS2ノード名が衝突しないよう、既定(俯瞰カメラ)以外は
@@ -103,11 +110,23 @@ class PoseEstimationNode(Node):
         self._object_points = np.array(keypoints_data["keypoints_local_xyz"], dtype=np.float64)
         self._recent_translations: list[np.ndarray] = []
 
+        self._annotations_pub = self.create_publisher(ImageAnnotations, ANNOTATIONS_TOPIC, 10)
+
         self.create_subscription(CameraInfo, CAMERA_INFO_TOPIC, self._on_camera_info, 10)
         self.create_subscription(Image, RGB_TOPIC, self._on_rgb, 10)
 
     def _on_camera_info(self, msg: CameraInfo) -> None:
         self._camera_info = msg
+
+    @staticmethod
+    def _points_annotation(stamp, points_xy: np.ndarray, colors: list[Color]) -> PointsAnnotation:
+        annotation = PointsAnnotation()
+        annotation.timestamp = stamp
+        annotation.type = PointsAnnotation.POINTS
+        annotation.points = [Point2(x=float(x), y=float(y)) for x, y in points_xy]
+        annotation.outline_colors = colors
+        annotation.thickness = 6.0
+        return annotation
 
     def _on_rgb(self, msg: Image) -> None:
         if self._camera_info is None:
@@ -127,6 +146,13 @@ class PoseEstimationNode(Node):
             kpt_confidences = np.ones(len(image_points))
 
         valid = kpt_confidences >= MIN_KEYPOINT_CONFIDENCE
+        keypoint_colors = [
+            DETECTED_KEYPOINT_COLOR if is_valid else LOW_CONFIDENCE_KEYPOINT_COLOR for is_valid in valid
+        ]
+        self._annotations_pub.publish(
+            ImageAnnotations(points=[self._points_annotation(msg.header.stamp, image_points, keypoint_colors)])
+        )
+
         if np.count_nonzero(valid) < MIN_KEYPOINTS_FOR_PNP:
             self.get_logger().info("検出キーポイント数が不足しているためTF配信をスキップ")
             return
@@ -149,6 +175,18 @@ class PoseEstimationNode(Node):
 
         reprojected, _ = cv2.projectPoints(self._object_points[valid], rvec, tvec, camera_matrix, dist_coeffs)
         reprojection_error = float(np.linalg.norm(reprojected.reshape(-1, 2) - image_points[valid], axis=1).mean())
+        self._annotations_pub.publish(
+            ImageAnnotations(
+                points=[
+                    self._points_annotation(msg.header.stamp, image_points, keypoint_colors),
+                    self._points_annotation(
+                        msg.header.stamp,
+                        reprojected.reshape(-1, 2),
+                        [REPROJECTED_POINT_COLOR] * len(reprojected),
+                    ),
+                ]
+            )
+        )
         if reprojection_error > MAX_REPROJECTION_ERROR_PX:
             self.get_logger().info(
                 f"再投影誤差が大きい({reprojection_error:.1f}px)ためTF配信をスキップ"
