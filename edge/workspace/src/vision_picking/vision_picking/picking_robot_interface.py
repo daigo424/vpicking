@@ -71,6 +71,11 @@ DOWNWARD_ORIENTATION = Quaternion(x=1.0, y=0.0, z=0.0, w=0.0)
 FLANGE_TO_FINGERTIP_Z = 0.1034
 
 
+def downward_orientation_for_yaw(yaw: float) -> Quaternion:
+    """DOWNWARD_ORIENTATION(panda_link8のローカルZ+をworldの-Zへ向ける姿勢)を、world Z軸周りにyaw回転させる。"""
+    return Quaternion(x=math.cos(yaw / 2.0), y=math.sin(yaw / 2.0), z=0.0, w=0.0)
+
+
 def grasp_orientation_for_yaw(rotation: Quaternion) -> Quaternion:
     # DOWNWARD_ORIENTATION固定のまま把持すると、target_objectが回転している場合に
     # 指がcubeの面ではなく角や斜めの位置に当たってしまい、掴み損ねる。
@@ -81,7 +86,7 @@ def grasp_orientation_for_yaw(rotation: Quaternion) -> Quaternion:
     # 実際の指の開閉軸(panda_hand基準)がcubeの面に対して直角に合うようにしている。
     _, _, yaw = euler_from_quaternion([rotation.x, rotation.y, rotation.z, rotation.w])
     yaw_mod = (yaw % (math.pi / 2)) - math.pi / 4
-    return Quaternion(x=math.cos(yaw_mod / 2.0), y=math.sin(yaw_mod / 2.0), z=0.0, w=0.0)
+    return downward_orientation_for_yaw(yaw_mod)
 
 
 class RobotInterface:
