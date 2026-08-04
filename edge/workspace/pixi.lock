@@ -638,6 +638,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-force-torque-sensor-broadcaster-4.40.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-forward-command-controller-4.40.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-foxglove-bridge-3.3.0-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-foxglove-msgs-3.3.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-generate-parameter-library-0.7.3-np2py312h2c89a96_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-generate-parameter-library-py-0.7.3-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-geometric-shapes-2.3.2-np2py312h3799b88_18.conda
@@ -11666,6 +11667,26 @@ packages:
   run_exports: {}
   size: 15942085
   timestamp: 1782330732880
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-foxglove-msgs-3.3.0-np2py312h2ed9cc7_18.conda
+  sha256: 325bced61efe7c13d6dca2c01de83633b67c985f5dd750369f2742795f8bada2
+  md5: b504ca33632ba91c693db7bd0fdfa2c6
+  depends:
+  - python
+  - ros-jazzy-builtin-interfaces
+  - ros-jazzy-geometry-msgs
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-rosidl-default-runtime
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - __glibc >=2.17,<3.0.a0
+  - libstdcxx >=14
+  - libgcc >=14
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  license: MIT
+  run_exports: {}
+  size: 738242
+  timestamp: 1782301913046
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-generate-parameter-library-0.7.3-np2py312h2c89a96_18.conda
   sha256: f27d6d35ddd439473e08a4a9ec1591808ae0fb771b492dce15380745fe4147f8
   md5: ba7efcd9f1984f8f7895c3e8f5c0304b

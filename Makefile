@@ -169,5 +169,5 @@ vp-run-yolo:
 	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VC CAMERA_NAMESPACE=camera TARGET_FRAME_OUT=target_object_coarse pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VF CAMERA_NAMESPACE=wrist_camera TARGET_FRAME_OUT=target_object_fine pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
-	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	trap '$(COMPOSE) exec -T $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
