@@ -8,7 +8,7 @@ world -> target_objectを/tfに配信するノードを差し替えるだけで�
 
 picking_controller_node.pyは粗検出(target_object_coarse)・精緻検出(target_object_fine)の
 2つのTFを要求するようになったため、真値には両者の区別が無いことを踏まえ、同じ姿勢を
-target_object_coarse/target_object_fineにも配信する(target_objectへの配信はpicking_session.py
+target_object_coarse/target_object_fineにも配信する(target_objectへの配信はcamera/picking_session.py
 のデータ収集が依存しているため維持する)。
 """
 

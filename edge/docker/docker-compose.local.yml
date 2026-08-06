@@ -36,6 +36,9 @@ services:
     volumes:
       - ../workspace:/workspace
       - ../../data:/data
+      # 学習ログ等の一時生成物置き場。コンテナ自身の/tmp(X11ソケット等)と衝突しないよう
+      # /tmp/vpickingへマウントする。
+      - ../../tmp:/tmp/vpicking
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # ../workspaceのバインドマウントがビルド時にpixi installした
       # /workspace/.pixiを覆い隠してしまうため、名前付きボリュームで上書きして

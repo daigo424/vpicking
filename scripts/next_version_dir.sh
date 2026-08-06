@@ -11,7 +11,10 @@ if [ ! -d "$DIR" ]; then
     exit 0
 fi
 
-MAX_N=$(ls -1 "$DIR" 2>/dev/null | grep -E '^v[0-9]+$' | sed 's/^v//' | sort -n | tail -1)
+# grepは非マッチ時に終了コード1を返す。pipefail下ではこれがパイプライン全体の
+# 失敗として伝播し(このDIRにまだvNが1つも無いだけの正常なケースでも)、-eで
+# スクリプトごと即座に(出力なしで)終了してしまうため、grepだけ失敗を許容する。
+MAX_N=$(ls -1 "$DIR" 2>/dev/null | { grep -E '^v[0-9]+$' || true; } | sed 's/^v//' | sort -n | tail -1)
 if [ -z "${MAX_N:-}" ]; then
     echo "v1"
 else
