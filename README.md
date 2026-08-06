@@ -4,7 +4,7 @@
 
 | Action Graph | Isaac Sim |
 |---|---|
-| <img width="1149" height="842" alt="action-graph" src="https://github.com/user-attachments/assets/22e3b5ef-80b1-4245-9d50-b14486eabc6c" /> | <video src="https://github.com/user-attachments/assets/ec52db95-69d2-42b5-859f-4681f2eae7ae"></video> |
+| <img width="1067" height="786" alt="Screenshot from 2026-08-07 00-30-31" src="https://github.com/user-attachments/assets/9d03329a-56af-4dd3-b5ae-f71658df75b3" /> | <video src="https://github.com/user-attachments/assets/1dfa049b-a9f4-48a3-bb77-efc092450c55"></video> |
 
 ## 開発環境セットアップ
 
