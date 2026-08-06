@@ -1,0 +1,23 @@
+# moveit_resources_panda_moveit_config同梱のros2_controllers.yamlはpanda_arm_controller
+# (joint_trajectory_controller)のallow_nonzero_velocity_at_trajectory_endをtrueにしている。
+# これだとまだ速度が残っている(=物理的に到達しきっていない)状態でも「到達成功」と
+# 報告されるため、直後にlog_finger_positions()/set_gripper()等を呼ぶと、実際の最終姿勢より
+# 数cm手前の位置を掴んでしまう。falseにして、速度がほぼ0になるまで到達成功にしない。
+panda_arm_controller:
+  ros__parameters:
+    allow_nonzero_velocity_at_trajectory_end: false
+    # constraints.<joint>.goalは既定で0.0(未設定)で、速度が収まっていれば実際の到達位置が
+    # 指令値からどれだけズレていても「成功」と判定される。重力トルクの大きい姿勢では
+    # 関節ドライブが指令位置の手前で静定しうるため、明示的な許容誤差を設定し、
+    # 収まらない場合は素直に失敗させる。goal_timeも既定0.0(無期限待ち)のままだと、
+    # 許容誤差に収まらない(＝恒久的にズレたまま)場合にgoal判定が永久に完了せず
+    # ハングするため、有限値にしてタイムアウト時に失敗として打ち切らせる。
+    constraints:
+      goal_time: 1.0
+      panda_joint1: { goal: 0.08 }
+      panda_joint2: { goal: 0.08 }
+      panda_joint3: { goal: 0.08 }
+      panda_joint4: { goal: 0.08 }
+      panda_joint5: { goal: 0.08 }
+      panda_joint6: { goal: 0.08 }
+      panda_joint7: { goal: 0.08 }

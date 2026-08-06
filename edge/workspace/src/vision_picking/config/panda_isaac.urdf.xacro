@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="panda">
+    <xacro:arg name="initial_positions_file" default="initial_positions.yaml" />
+    <xacro:arg name="ros2_control_hardware_type" default="isaac" />
+
+    <!-- Import panda urdf file -->
+    <xacro:include filename="$(find moveit_resources_panda_description)/urdf/panda.urdf.xacro" />
+
+    <!-- Ref: https://github.com/isaac-sim/IsaacSim-ros_workspaces (isaac_moveit/config/panda_isaac.urdf.xacro)
+         panda_hand.ros2_control.xacro(moveit_resources_panda_moveit_config同梱)はpanda_finger_joint2が
+         command_interfaceを持たないmimic関節であるにもかかわらず、topic_based_ros2_control
+         (TopicBasedSystem)のmimic処理がjoint_state.positionの範囲外に書き込み、同じros2_control_node
+         プロセス内にある他のros2_control(このarm側含む)のメモリを壊してcontroller_managerを不安定化
+         させる。そのためhand側のros2_control(panda_hand_ros2_control)はここでは組み込まず、
+         グリッパーはgripper_to_isaac_node(専用のrclpyノード)経由で/isaac_joint_commandsへ
+         直接コマンドを送る。 -->
+    <xacro:include filename="$(find moveit_resources_panda_moveit_config)/config/panda.ros2_control.xacro" />
+
+    <xacro:panda_ros2_control name="PandaFakeSystem" initial_positions_file="$(arg initial_positions_file)" ros2_control_hardware_type="$(arg ros2_control_hardware_type)"/>
+</robot>

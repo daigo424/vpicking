@@ -18,6 +18,8 @@ ros-jazzy-moveit-resources-panda-moveit-config = "*"
 ros-jazzy-moveit-simple-controller-manager = ">=2.12.4,<3"
 ros-jazzy-ros2-control = ">=4.43.0,<5"
 ros-jazzy-ros2-controllers = ">=4.37.0,<5"
+ros-jazzy-topic-based-ros2-control = "*"
+ros-jazzy-trac-ik-kinematics-plugin = "*"
 ros-jazzy-rmw-fastrtps-cpp = "*"
 ros-jazzy-foxglove-bridge = "*"
 ros-jazzy-foxglove-msgs = "*"
@@ -175,8 +177,10 @@ build = { cmd = "colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=
 clean = { cmd = "rm -rf build install log", description = "ビルド成果物を削除" }
 release-build = { cmd = "colcon build --merge-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF", description = "ROS 2 workspaceを本番ビルド" }
 sim = { cmd = "python scripts/run_simulation.py", description = "Isaac SimをOmniGraph自動配線込みで起動" }
+controller_manager = { cmd = "ros2 launch vision_picking controller_manager.launch.py", description = "ros2_control(controller_manager+joint_trajectory_controller+GripperActionController)を起動し、Isaac Sim側の/isaac_joint_states・/isaac_joint_commandsと標準の/joint_states・FollowJointTrajectory/GripperCommandアクションを橋渡しする" }
 gt_tf_publisher_node = { cmd = "ros2 run vision_picking gt_tf_publisher_node", description = "target_objectの真値TFをworld -> target_objectとして/tfに配信するground truthノード" }
 picking_controller_node = { cmd = "ros2 run vision_picking picking_controller_node", description = "moveit_pyでアプローチ→下降→把持→上昇→プレイスを実行するピッキングコントローラ" }
+stacking_controller_node = { cmd = "ros2 run vision_picking stacking_controller_node", description = "STACK_BLOCKS環境変数で生成した複数のtarget_objectをvp-run-yoloと同じ認識で1個ずつ検出しながら順番に積み重ねる" }
 camera_bridge_node = { cmd = "ros2 run vision_picking camera_bridge_node", description = "Isaac Sim側の/sim_camera/*を認識ノード向けの安定したトピック名(/camera/*)へ中継する" }
 pose_estimation_node_classical_cv = { cmd = "ros2 run vision_picking pose_estimation_node_classical_cv", description = "深度点群のセグメンテーション+重心/主軸推定でtarget_objectのworld -> target_objectのTFを配信する(古典的CV版)" }
 foxglove_bridge = { cmd = "ros2 launch foxglove_bridge foxglove_bridge_launch.xml", description = "Foxglove StudioからWebSocket経由でカメラ画像・TF等を可視化するためのbridgeを起動" }

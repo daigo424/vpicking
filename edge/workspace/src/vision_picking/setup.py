@@ -9,7 +9,17 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/config", ["config/moveit_cpp.yaml"]),
+        (
+            "share/" + package_name + "/config",
+            [
+                "config/moveit_cpp.yaml",
+                "config/panda_arm_controller_overrides.yaml",
+                "config/gripper_moveit_controllers.yaml",
+                "config/panda_isaac.urdf.xacro",
+                "config/kinematics.yaml",
+            ],
+        ),
+        ("share/" + package_name + "/launch", ["launch/controller_manager.launch.py"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -25,6 +35,8 @@ setup(
             "camera_bridge_node = vision_picking.camera_bridge_node:main",
             "pose_estimation_node_classical_cv = vision_picking.pose_estimation_node_classical_cv:main",
             "pose_estimation_node = vision_picking.pose_estimation_node:main",
+            "stacking_controller_node = vision_picking.stacking_controller_node:main",
+            "gripper_to_isaac_node = vision_picking.gripper_to_isaac_node:main",
         ],
     },
 )

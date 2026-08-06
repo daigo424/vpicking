@@ -20,5 +20,5 @@ plan_request_params:
   # フルスピード(1.0)だと、物体を保持したまま運ぶ区間(上昇・プレイス移動・プレイス降下)で
   # 加速度が摩擦による保持力を上回り、掴んだ物体が滑り落ちることがある
   # (複数回の検証で、持ち上げ自体は成功するが運搬中に脱落するパターンを確認済み)。
-  max_velocity_scaling_factor: 0.3
-  max_acceleration_scaling_factor: 0.3
+  max_velocity_scaling_factor: 0.15
+  max_acceleration_scaling_factor: 0.15

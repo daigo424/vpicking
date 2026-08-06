@@ -1,0 +1,13 @@
+# Ref: https://moveit.picknik.ai/humble/doc/examples/trac_ik/trac_ik_tutorial.html
+# moveit_resources_panda_moveit_config同梱のkinematics.yamlが使うKDLKinematicsPlugin
+# (数値IK)は、7自由度(冗長)のPandaで局所解にはまり込んで抜け出せないことがある
+# (timeoutを伸ばしても解消しない)。TRAC-IKは行き詰まったら自動的に再探索する設計のため
+# こちらを使う。
+# solve_type: Speedは直前の姿勢から離れた(冗長自由度が大きく変わる)解になりやすく、
+# joint6(トルク上限12Nm)側に負担の大きい経路を通ることがあった。Distanceはtimeout
+# 一杯まで探索し、シード(直前の関節角)に最も近い解を返すため、冗長自由度の急な
+# 切り替わりを避けやすい(Manipulation1でも試したがjoint2側の改善は見られなかった)。
+panda_arm:
+  kinematics_solver: trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin
+  kinematics_solver_timeout: 0.05
+  solve_type: Distance

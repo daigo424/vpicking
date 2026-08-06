@@ -1,4 +1,4 @@
-.PHONY: up build new-launch-pkg dataset train dataset-split dataset-collect-picking-session dataset-collect-wrist-picking-session dataset-collect-wrist-jitter model-promote vp-run-yolo-latest-train vp-run-yolo-latest-models
+.PHONY: up build new-launch-pkg dataset train dataset-split dataset-collect-picking-session dataset-collect-wrist-picking-session dataset-collect-wrist-jitter model-promote vp-run-yolo-latest-train vp-run-yolo-latest-models sim-stack vp-stacking-controller vp-run-yolo-stack vp-controller-manager
 
 COMPOSE_PJ_NAME    := vpicking
 # WSL2かネイティブLinuxかでGPUパススルーの構成が別物になる(edge/docker/docker-compose.gpu-*.yml参照)
@@ -80,12 +80,22 @@ interface-show:
 # ROS2: 各node & launchの起動
 sim:
 	$(MAKE) colcon CMD_RUN="pixi run sim"
+# 3個のtarget_objectをランダム配置した、vp-run-yolo-stack用のシーンで起動する。
+sim-stack:
+	$(MAKE) colcon CMD_RUN="STACK_BLOCKS=3 pixi run sim"
 vp-gt-tf-publisher:
 	$(MAKE) colcon CMD_RUN="pixi run gt_tf_publisher_node"
 vp-picking-controller:
 	$(MAKE) colcon CMD_RUN="pixi run picking_controller_node"
+vp-stacking-controller:
+	$(MAKE) colcon CMD_RUN="pixi run stacking_controller_node"
 vp-camera-bridge:
 	$(MAKE) colcon CMD_RUN="pixi run camera_bridge_node"
+# アーム・グリッパーの軌道実行(FollowJointTrajectory/GripperCommand)を提供する
+# ros2_control一式(controller_manager+joint_trajectory_controller+GripperActionController)。
+# vp-picking-controller/vp-stacking-controllerを使う全ターゲットで事前に必要。
+vp-controller-manager:
+	$(MAKE) colcon CMD_RUN="pixi run controller_manager"
 vp-pose-estimation-classical-cv:
 	$(MAKE) colcon CMD_RUN="pixi run pose_estimation_node_classical_cv"
 # Foxglove Studio(https://app.foxglove.dev)からws://localhost:8765に接続してカメラ画像・TF等を可視化する。
@@ -99,10 +109,12 @@ train:
 	@bash scripts/select_method.sh train
 
 # データ収集後・学習前に1回実行し、data/<camera>/dataset/<version>のtrain/valを
-# リークしない形に分割する(例: make dataset-split DATASET_DIR=data/overhead-camera/dataset/v1)。
+# リークしない形に分割する(例: make dataset-split DATASET_DIR=/data/overhead-camera/dataset/v1)。
+# コンテナ内でdata/はワークスペース(/workspace)配下ではなく/data直下にマウントされているため、
+# DATASET_DIRは/dataから始まる絶対パスで指定する必要がある。
 DATASET_DIR ?=
 dataset-split:
-	@if [ -z "$(DATASET_DIR)" ]; then echo "使い方: make dataset-split DATASET_DIR=data/overhead-camera/dataset/v1" >&2; exit 1; fi
+	@if [ -z "$(DATASET_DIR)" ]; then echo "使い方: make dataset-split DATASET_DIR=/data/overhead-camera/dataset/v1" >&2; exit 1; fi
 	$(MAKE) colcon CMD_RUN="pixi run split_dataset --dataset-dir $(DATASET_DIR)"
 
 # make simでシムを起動する代わりに、シムの起動〜ランダム配置〜1回のピック実行〜記録を
@@ -156,13 +168,15 @@ vp-pose-estimation:
 # vp-run-cv: Depthカメラの画像から物体姿勢を推定してピッキング(古典的CV版)
 # vp-run-yolo: RGB画像からYOLO11-Pose+PnPで物体姿勢を推定してピッキング(本番版)
 vp-run-gt:
-	@$(MAKE) vp-gt-tf-publisher EXEC="$(COMPOSE) exec -T" & \
-	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/gt_tf_publisher_node" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	@$(MAKE) vp-controller-manager EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) vp-gt-tf-publisher EXEC="$(COMPOSE) exec -T" & \
+	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/gt_tf_publisher_node; pkill -f vision_picking/launch/controller_manager.launch.py; pkill -f controller_manager/ros2_control_node; pkill -f robot_state_publisher/robot_state_publisher" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
 vp-run-cv:
-	@$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
+	@$(MAKE) vp-controller-manager EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) vp-pose-estimation-classical-cv EXEC="$(COMPOSE) exec -T" & \
-	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node_classical_cv" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	trap '$(EXEC) $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node_classical_cv; pkill -f vision_picking/launch/controller_manager.launch.py; pkill -f controller_manager/ros2_control_node; pkill -f robot_state_publisher/robot_state_publisher" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
 # vp-run-yolo: 俯瞰カメラ(粗検出、VER_COARSE)・手先カメラ(精緻検出、VER_FINE)の
 # 2つのpose_estimation_nodeインスタンスを同時起動する(pose_estimation_node.py自体は
@@ -174,11 +188,26 @@ vp-run-yolo:
 	if [ -z "$$VC" ]; then VC=$$(bash scripts/select_version.sh "俯瞰カメラ(粗検出)" overhead-camera); fi; \
 	VF="$(VER_FINE)"; \
 	if [ -z "$$VF" ]; then VF=$$(bash scripts/select_version.sh "手先カメラ(精緻検出)" wrist-camera); fi; \
+	$(MAKE) vp-controller-manager EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VC CAMERA_NAMESPACE=camera TARGET_FRAME_OUT=target_object_coarse pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
 	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VF CAMERA_NAMESPACE=wrist_camera TARGET_FRAME_OUT=target_object_fine pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
-	trap '$(COMPOSE) exec -T $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	trap '$(COMPOSE) exec -T $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$; pkill -f vision_picking/launch/controller_manager.launch.py; pkill -f controller_manager/ros2_control_node; pkill -f robot_state_publisher/robot_state_publisher" >/dev/null 2>&1 || true' EXIT INT TERM; \
 	$(MAKE) vp-picking-controller
+
+# vp-run-yolo-stack: vp-run-yoloと同じ認識構成(俯瞰=coarse・手先=fine)のまま、
+# 事前にmake sim-stackで生成した複数のtarget_objectを1個ずつ検出・スタッキングする。
+vp-run-yolo-stack:
+	@VC="$(VER_COARSE)"; \
+	if [ -z "$$VC" ]; then VC=$$(bash scripts/select_version.sh "俯瞰カメラ(粗検出)" overhead-camera); fi; \
+	VF="$(VER_FINE)"; \
+	if [ -z "$$VF" ]; then VF=$$(bash scripts/select_version.sh "手先カメラ(精緻検出)" wrist-camera); fi; \
+	$(MAKE) vp-controller-manager EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) vp-camera-bridge EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VC CAMERA_NAMESPACE=camera TARGET_FRAME_OUT=target_object_coarse pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
+	$(MAKE) colcon CMD_RUN="MODEL_VERSION=$$VF CAMERA_NAMESPACE=wrist_camera TARGET_FRAME_OUT=target_object_fine pixi run pose_estimation_node" EXEC="$(COMPOSE) exec -T" & \
+	trap '$(COMPOSE) exec -T $(ROS2_SERVICE) bash -c "pkill -f vision_picking/lib/vision_picking/camera_bridge_node; pkill -f vision_picking/lib/vision_picking/pose_estimation_node$$; pkill -f vision_picking/launch/controller_manager.launch.py; pkill -f controller_manager/ros2_control_node; pkill -f robot_state_publisher/robot_state_publisher" >/dev/null 2>&1 || true' EXIT INT TERM; \
+	$(MAKE) vp-stacking-controller
 
 # vp-run-yolo-latest-train/vp-run-yolo-latest-models: select_version.shの対話選択を省略し、
 # data/<camera>/train-models/(ローカルのみ・push前)またはdata/<camera>/models/(git管理・
