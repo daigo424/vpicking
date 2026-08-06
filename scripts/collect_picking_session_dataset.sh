@@ -13,14 +13,21 @@ FRAMES_PER_RUN="${2:-8}"
 # ホスト上のこのスクリプトから直接次バージョンを採番できる。
 VERSION=$(bash "$(dirname "$0")/next_version_dir.sh" "data/overhead-camera/dataset")
 OUTPUT_DIR="/data/overhead-camera/dataset/$VERSION"
-# カメラは(0.5, 0.0, 0.8)固定・真下向きで、実測画角(fx=fy=1527px, キューブ上面までの
-# 距離0.75m)は約31cm x 24cm。yaw回転時のキューブ最大到達距離(対角の半分、約3.5cm)と
-# 1cmの安全マージンを差し引いた、中心が確実に画角内に収まる範囲が以下。
-# これより広い範囲でランダム配置すると、画角外でフレームが1枚も撮れないイテレーションが多発する。
-X_MIN=0.388
-X_MAX=0.612
-Y_MIN=-0.073
-Y_MAX=0.073
+# 画角内に収まる安全範囲は、カメラからキューブ上面までの実効距離(pinholeモデル)から
+# yaw回転時のキューブ最大到達距離(対角の半分、約3.5cm)と1cmの安全マージンを差し引いて
+# 計算する。aperture/focal_lengthの値・計算式・TABLE_HEIGHT_Mはrun_simulation.py/
+# common/target_object_shape.pyと揃えること(画角自体を変えたらここも合わせて変える必要がある)。
+TABLE_HEIGHT_M=0.30
+CUBE_TOP_OFFSET_M=0.05
+DIAGONAL_MARGIN_M=0.045
+APERTURE_X_MM=2.0955
+APERTURE_Y_MM=1.52908
+FOCAL_LENGTH_MM=2.5
+# 検出モデルは学習データに含まれる距離のキューブの見かけサイズにしか対応できないため、
+# カメラ高さを1点に固定したまま学習データを集めると、別の距離では検出が破綻する。
+# イテレーションごとに高さ自体もランダム化し、学習データに距離の多様性を持たせる。
+CAMERA_HEIGHT_MIN=0.6
+CAMERA_HEIGHT_MAX=1.0
 
 echo "出力先: $OUTPUT_DIR"
 
@@ -35,13 +42,20 @@ cleanup() {
 
 for i in $(seq 0 $((ITERATIONS - 1))); do
     cleanup
+    CAMERA_HEIGHT=$(python3 -c "import random; print(round(random.uniform($CAMERA_HEIGHT_MIN,$CAMERA_HEIGHT_MAX),3))")
+    read -r X_MIN X_MAX Y_MIN Y_MAX <<< "$(python3 -c "
+distance = $CAMERA_HEIGHT - $TABLE_HEIGHT_M - $CUBE_TOP_OFFSET_M
+half_x = distance * $APERTURE_X_MM / (2 * $FOCAL_LENGTH_MM) - $DIAGONAL_MARGIN_M
+half_y = distance * $APERTURE_Y_MM / (2 * $FOCAL_LENGTH_MM) - $DIAGONAL_MARGIN_M
+print(round(0.5 - half_x, 3), round(0.5 + half_x, 3), round(-half_y, 3), round(half_y, 3))
+")"
     X=$(python3 -c "import random; print(round(random.uniform($X_MIN,$X_MAX),3))")
     Y=$(python3 -c "import random; print(round(random.uniform($Y_MIN,$Y_MAX),3))")
     YAW=$(python3 -c "import random, math; print(round(random.uniform(-math.pi,math.pi),3))")
     START_INDEX=$((i * FRAMES_PER_RUN))
-    echo "=== iteration $i/$((ITERATIONS - 1)): x=$X y=$Y yaw=$YAW start_index=$START_INDEX ==="
+    echo "=== iteration $i/$((ITERATIONS - 1)): camera_height=$CAMERA_HEIGHT x=$X y=$Y yaw=$YAW start_index=$START_INDEX ==="
 
-    docker exec -d edge_container bash -c "export OMNI_KIT_ACCEPT_EULA=YES TARGET_OBJECT_X=$X TARGET_OBJECT_Y=$Y TARGET_OBJECT_YAW=$YAW; source /workspace/install/setup.bash 2>/dev/null; cd /workspace && pixi run sim --headless" >/dev/null 2>&1
+    docker exec -d edge_container bash -c "export OMNI_KIT_ACCEPT_EULA=YES CAMERA_HEIGHT_M=$CAMERA_HEIGHT TARGET_OBJECT_X=$X TARGET_OBJECT_Y=$Y TARGET_OBJECT_YAW=$YAW; source /workspace/install/setup.bash 2>/dev/null; cd /workspace && pixi run sim --headless" >/dev/null 2>&1
 
     ready=0
     for _ in $(seq 1 60); do

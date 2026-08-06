@@ -108,6 +108,8 @@ class MoveTo(py_trees.behaviour.Behaviour):
         static_position: tuple[float, float, float] | None = None,
         orientation_key: str | None = None,
         static_orientation: Quaternion = DOWNWARD_ORIENTATION,
+        verify_and_correct: bool = False,
+        yaw_free: bool = False,
     ) -> None:
         super().__init__(name=name)
         assert position_key or static_position, "position_keyかstatic_positionのどちらかが必要"
@@ -118,6 +120,8 @@ class MoveTo(py_trees.behaviour.Behaviour):
         self._static_position = static_position
         self._orientation_key = orientation_key
         self._static_orientation = static_orientation
+        self._verify_and_correct = verify_and_correct
+        self._yaw_free = yaw_free
         self.blackboard = self.attach_blackboard_client(name=name)
         for key in (position_key, orientation_key):
             if key:
@@ -135,7 +139,12 @@ class MoveTo(py_trees.behaviour.Behaviour):
             else self._static_orientation
         )
         try:
-            self._interface.move_to((x, y, z + self._height_offset), orientation)
+            self._interface.move_to(
+                (x, y, z + self._height_offset),
+                orientation,
+                verify_and_correct=self._verify_and_correct,
+                yaw_free=self._yaw_free,
+            )
         except RuntimeError as e:
             self._interface.node.get_logger().error(str(e))
             return Status.FAILURE

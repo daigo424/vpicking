@@ -290,6 +290,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/nettle-3.10.1-h4a9d5aa_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/ninja-1.13.2-h171cf75_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/nlohmann_json-3.12.0-h54a6638_1.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/nlopt-2.11.0-np2py312h0f77346_1.conda
       - conda: https://prefix.dev/conda-forge/linux-64/nspr-4.38-h29cc59b_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/nss-3.118-h445c969_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/numpy-2.5.1-py312h33ff503_0.conda
@@ -922,9 +923,12 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tl-expected-1.3.1-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tlsf-0.9.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tlsf-cpp-0.17.1-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-based-ros2-control-0.3.0-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-monitor-0.33.10-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-tools-1.3.3-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-tools-interfaces-1.3.3-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-kinematics-plugin-2.0.2-np2py312h2ed9cc7_18.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-lib-2.0.2-np2py312h13839b9_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tracetools-8.2.5-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trajectory-msgs-5.3.7-np2py312h2ed9cc7_18.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-transmission-interface-4.45.1-np2py312h2c89a96_18.conda
@@ -5566,6 +5570,24 @@ packages:
   run_exports: {}
   size: 136216
   timestamp: 1758194284857
+- conda: https://prefix.dev/conda-forge/linux-64/nlopt-2.11.0-np2py312h0f77346_1.conda
+  sha256: 1020e8c934aa3ccf12704e15c758b1629ed66079a44d6c6a00c524188ed56f49
+  md5: 4db67f3defb6b2f969b8631d6f732e6e
+  depends:
+  - python
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.23,<3
+  license: LGPL-2.1-or-later
+  purls:
+  - pkg:pypi/nlopt?source=hash-mapping
+  run_exports:
+    weak:
+    - nlopt >=2.11.0,<2.12.0a0
+  size: 459135
+  timestamp: 1780813826081
 - conda: https://prefix.dev/conda-forge/linux-64/nspr-4.38-h29cc59b_0.conda
   sha256: e3664264bd936c357523b55c71ed5a30263c6ba278d726a75b1eb112e6fb0b64
   md5: e235d5566c9cc8970eb2798dd4ecf62f
@@ -18385,6 +18407,27 @@ packages:
   run_exports: {}
   size: 185565
   timestamp: 1782303368144
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-based-ros2-control-0.3.0-np2py312h2ed9cc7_18.conda
+  sha256: 7ca824527384cdb2ffb506a4cf4af598b317a7d0e00858826c802181d2edd6b1
+  md5: 6411e75146206e90e28b6c3cd8e144de
+  depends:
+  - python
+  - ros-jazzy-angles
+  - ros-jazzy-hardware-interface
+  - ros-jazzy-rclcpp
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-sensor-msgs
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - python_abi 3.12.* *_cp312
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 211341
+  timestamp: 1785655265216
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-monitor-0.33.10-np2py312h2ed9cc7_18.conda
   sha256: d28eb1126674e328f1b6a9627e403a1b4e050410271234b1753f02d534e628d5
   md5: 781d37785181664295860f0ca329a34a
@@ -18448,6 +18491,58 @@ packages:
   run_exports: {}
   size: 325360
   timestamp: 1782301671033
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-kinematics-plugin-2.0.2-np2py312h2ed9cc7_18.conda
+  sha256: 7d3e24f5eb1b2ee87d255dac4f045a1e64ff2e6adba56e2a77ba591a241b7d70
+  md5: 32494702e28da3616d966166a5485384
+  depends:
+  - python
+  - ros-jazzy-class-loader
+  - ros-jazzy-generate-parameter-library
+  - ros-jazzy-moveit-core
+  - ros-jazzy-pluginlib
+  - ros-jazzy-rclcpp
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-tf2-kdl
+  - ros-jazzy-trac-ik-lib
+  - ros-jazzy-urdf
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.25,<3
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 123699
+  timestamp: 1782332666620
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-lib-2.0.2-np2py312h13839b9_18.conda
+  sha256: 231ebe6631557aabc65fc82e864c88a2aa9f9fe75b4a0ff06f5c9030ac162b23
+  md5: 386fe4cfaffb3f0ce953305be6cb4c8a
+  depends:
+  - eigen
+  - eigen-abi-devel
+  - nlopt
+  - pkg-config
+  - python
+  - ros-jazzy-geometry-msgs
+  - ros-jazzy-kdl-parser
+  - ros-jazzy-rclcpp
+  - ros-jazzy-ros-workspace
+  - ros-jazzy-urdf
+  - ros2-distro-mutex 0.15.* jazzy_*
+  - libgcc >=14
+  - libstdcxx >=14
+  - __glibc >=2.17,<3.0.a0
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.15.0,<0.16.0a0
+  - nlopt >=2.11.0,<2.12.0a0
+  - eigen-abi >=5.0.1.80,<5.0.1.81.0a0
+  - python_abi 3.12.* *_cp312
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 165808
+  timestamp: 1782303424760
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tracetools-8.2.5-np2py312h2ed9cc7_18.conda
   sha256: a3be09ac9213689e8a9afda4d741c2729292d1abb5a6204719d33de49157d1f5
   md5: 9a6716e93b98f3e201472daeb92a92b5

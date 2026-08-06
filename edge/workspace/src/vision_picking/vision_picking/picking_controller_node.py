@@ -7,12 +7,10 @@ treeでアプローチ→下降→把持→上昇→プレイスの一連動作�
 2段階の姿勢推定に対応する。実際のツリー構築はbuild_tree()、各ステップの実処理は
 picking_robot_interface.RobotInterfaceとpicking_behaviours.pyの各behaviourに委譲する。
 
-moveit_py標準のtrajectory_execution(ros2_controlのFollowJointTrajectoryアクション)は
-Isaac Sim側に存在せず、run_simulation.pyのOmniGraphは/joint_command(sensor_msgs/JointState)を
-直接subscribeするだけの構成になっている。そのため、計画したtrajectoryのwaypointを
-RobotInterfaceがタイマー無しの逐次sleepループで/joint_commandへpublishする、
-簡易的なtrajectoryプレイヤーを実装している(この一連の処理は同期的にブロックするため、
-本ツリーの各behaviourも一発実行・即座にSUCCESS/FAILUREを返す設計にしている)。
+アーム・グリッパーの実行はros2_control(controller_manager、要:別途vp-controller-manager起動)経由の
+FollowJointTrajectory/GripperCommandアクションを使い、moveit_py標準のexecute()で行う
+(picking_robot_interface.RobotInterface参照)。この一連の処理は完了まで同期的にブロックするため、
+本ツリーの各behaviourも一発実行・即座にSUCCESS/FAILUREを返す設計にしている。
 """
 
 import sys
@@ -24,6 +22,7 @@ import py_trees_ros
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 
+from vision_picking.diagnostics import DIAGNOSTICS_TOPIC, build_diagnostics
 from vision_picking.picking_behaviours import (
     AttachTarget,
     DetachTarget,
@@ -49,9 +48,6 @@ from vision_picking.picking_robot_interface import (
 TICK_PERIOD_SEC = 0.1
 TREE_SETUP_TIMEOUT_SEC = 15.0
 
-# Foxglove StudioのDiagnosticsパネルが標準で購読する"/diagnostics"に、
-# 各behaviourの実行状況をpy_treesのStatusから変換して配信する。
-DIAGNOSTICS_TOPIC = "/diagnostics"
 _DIAGNOSTIC_LEVEL = {
     py_trees.common.Status.SUCCESS: DiagnosticStatus.OK,
     py_trees.common.Status.RUNNING: DiagnosticStatus.WARN,
@@ -63,29 +59,20 @@ _DIAGNOSTIC_LEVEL = {
 def _publish_diagnostics(
     node: rclpy.node.Node, publisher, root: py_trees.behaviour.Behaviour
 ) -> None:
-    msg = DiagnosticArray()
-    msg.header.stamp = node.get_clock().now().to_msg()
-
-    overall = DiagnosticStatus()
-    overall.hardware_id = "picking_controller_node"
-    overall.name = "picking_controller: 全体"
-    overall.level = _DIAGNOSTIC_LEVEL.get(root.status, DiagnosticStatus.STALE)
-    overall.message = root.status.name
-    msg.status.append(overall)
-
+    statuses = [
+        ("picking_controller: 全体", _DIAGNOSTIC_LEVEL.get(root.status, DiagnosticStatus.STALE), root.status.name)
+    ]
     # Sequence自体(root)の状態はoverallで表現済みのため、composite自身は除外し
     # 葉のbehaviourだけを個別のステップとして列挙する。
     for behaviour in root.iterate():
         if isinstance(behaviour, py_trees.composites.Composite):
             continue
-        status = DiagnosticStatus()
-        status.hardware_id = "picking_controller_node"
-        status.name = f"picking_controller: {behaviour.name}"
-        status.level = _DIAGNOSTIC_LEVEL.get(behaviour.status, DiagnosticStatus.STALE)
-        status.message = behaviour.status.name
-        msg.status.append(status)
-
-    publisher.publish(msg)
+        statuses.append((
+            f"picking_controller: {behaviour.name}",
+            _DIAGNOSTIC_LEVEL.get(behaviour.status, DiagnosticStatus.STALE),
+            behaviour.status.name,
+        ))
+    publisher.publish(build_diagnostics(node, "picking_controller_node", statuses))
 
 
 def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
@@ -124,6 +111,7 @@ def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
                 log_label="その場で姿勢合わせ",
                 position_key="coarse_pose",
                 orientation_key="fine_pose",
+                yaw_free=True,
             ),
             MoveTo(
                 "精緻位置へ水平移動",
@@ -132,6 +120,7 @@ def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
                 log_label="精緻位置へ水平移動",
                 position_key="fine_pose",
                 orientation_key="fine_pose",
+                yaw_free=True,
             ),
             MoveTo(
                 "下降",
@@ -140,6 +129,8 @@ def build_tree(interface: RobotInterface) -> py_trees.behaviour.Behaviour:
                 log_label="下降",
                 position_key="fine_pose",
                 orientation_key="fine_pose",
+                verify_and_correct=True,
+                yaw_free=True,
             ),
             LogFingerPositions("下降後ログ", interface, label="下降後", position_key="fine_pose"),
             SetGripper("把持", interface, positions=GRIPPER_CLOSED_POSITIONS, log_label="把持"),
