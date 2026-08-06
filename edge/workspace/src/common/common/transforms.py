@@ -2,7 +2,7 @@
 """geometry_msgs/Transformまわりの共通処理。
 
 vision_pickingパッケージのROS2ノード(pose_estimation_node.py等)と、
-scripts/dataset/配下のcolcon管理外スクリプト(picking_session.py)の両方が
+scripts/dataset/配下のcolcon管理外スクリプト(camera/picking_session.py)の両方が
 全く同じworld<->camera<->target_objectの変換行列計算を必要とするため、
 どちらか一方の下に置くと重複・食い違いが起きやすい。src直下の独立したパッケージに置き、
 両方から`from common.transforms import transform_to_matrix`で参照する。

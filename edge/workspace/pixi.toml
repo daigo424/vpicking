@@ -181,8 +181,8 @@ camera_bridge_node = { cmd = "ros2 run vision_picking camera_bridge_node", descr
 pose_estimation_node_classical_cv = { cmd = "ros2 run vision_picking pose_estimation_node_classical_cv", description = "深度点群のセグメンテーション+重心/主軸推定でtarget_objectのworld -> target_objectのTFを配信する(古典的CV版)" }
 foxglove_bridge = { cmd = "ros2 launch foxglove_bridge foxglove_bridge_launch.xml", description = "Foxglove StudioからWebSocket経由でカメラ画像・TF等を可視化するためのbridgeを起動" }
 pose_estimation_node = { cmd = "ros2 run vision_picking pose_estimation_node", description = "YOLO11-Pose+PnPでtarget_objectのworld -> target_objectのTFを配信する(本番版)" }
-cube_only = { cmd = "python scripts/dataset/cube_only.py", description = "Pandaアームを含まないキューブのみの孤立した合成シーンでデータセット(YOLO Poseラベル/pose_gt.json/object_3d_keypoints.json)を--output-dir(data/<camera>/dataset/<version>)に生成する" }
+cube_only = { cmd = "python scripts/dataset/overhead_camera/cube_only.py", description = "Pandaアームを含まないキューブのみの孤立した合成シーンでデータセット(YOLO Poseラベル/pose_gt.json/object_3d_keypoints.json)を--output-dir(data/<camera>/dataset/<version>)に生成する" }
 yolo_pose = { cmd = "python scripts/train/yolo_pose.py", description = "データセットでYOLO11-Poseを学習する" }
-picking_session = { cmd = "python scripts/dataset/picking_session.py", description = "vp-run-gt実行中のPandaアーム込みの実カメラ画像+GT姿勢からYOLO11-Pose学習用データを記録する(要:別途vp-run-gt起動)" }
-collect_wrist_jitter_dataset = { cmd = "python scripts/dataset/collect_wrist_jitter_dataset.py", description = "手先カメラをground truthの物体近傍のランダムな相対位置・向きへ直接動かしながら学習データを記録する(要:別途gt_tf_publisher_node/camera_bridge_node起動、物体が画像内の様々な位置に写るデータを収集するため)" }
-split_dataset = { cmd = "python scripts/dataset/split_dataset.py", description = "--dataset-dir(data/<camera>/dataset/<version>)を物体姿勢の重複を跨がない形でtrain/valに分割し、dataset.yamlを更新する(データ収集後・学習前に1回実行)" }
+picking_session = { cmd = "python scripts/dataset/camera/picking_session.py", description = "vp-run-gt実行中のPandaアーム込みの実カメラ画像+GT姿勢からYOLO11-Pose学習用データを記録する(要:別途vp-run-gt起動)" }
+jitter = { cmd = "python scripts/dataset/wrist_camera/jitter.py", description = "手先カメラをground truthの物体近傍のランダムな相対位置・向きへ直接動かしながら学習データを記録する(要:別途gt_tf_publisher_node/camera_bridge_node起動、物体が画像内の様々な位置に写るデータを収集するため)" }
+split_dataset = { cmd = "python scripts/dataset/tool/split_dataset.py", description = "--dataset-dir(data/<camera>/dataset/<version>)を物体姿勢の重複を跨がない形でtrain/valに分割し、dataset.yamlを更新する(データ収集後・学習前に1回実行)" }

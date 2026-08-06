@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """target_objectの形状・キーポイント定義と、YOLO-Poseラベル生成の共通処理。
 
-cube_only.py/picking_session.pyの両方が全く同じキーポイントの生成順(1-indexed)・
+overhead_camera/cube_only.py/camera/picking_session.pyの両方が全く同じキーポイントの生成順(1-indexed)・
 対称性の畳み込みロジック・ラベル形式を使う必要があるため、ここに集約する
 (重複させると、どちらか一方だけ修正して食い違う不具合を起こしやすい)。
 
-isaacsim/omni importに関する制約(cube_only.py参照)と無関係な、mathとstdlibのみに
+isaacsim/omni importに関する制約(overhead_camera/cube_only.py参照)と無関係な、mathとstdlibのみに
 依存する軽量モジュールなので、SimulationApp生成前後どちらでimportしても問題ない。
 numpyは呼び出し側からの引数として受け取り、このモジュール自身はimportしない
-(cube_only.py側の「isaacsim/omni以外もSimulationApp生成後にまとめる」方針に合わせるため)。
+(overhead_camera/cube_only.py側の「isaacsim/omni以外もSimulationApp生成後にまとめる」方針に合わせるため)。
 """
 
 import math

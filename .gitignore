@@ -54,6 +54,18 @@ data/overhead-camera/*
 data/wrist-camera/*
 !data/wrist-camera/models/
 
+# 学習の起点にする事前学習済みベースモデル(yolo_pose.py --model)は、Ultralyticsの
+# リリースが更新されると同じファイル名でも中身が変わりうるため、再現性のため
+# data/yolo/models/に固定してgit管理下に置く(overhead-camera/wrist-cameraと同じ再包含の仕組み)。
+# yolo_pose.pyの--modelにローカルパスを渡すとUltralytics側の挙動でprojectが無視され、
+# 学習ログ一式がdata/yolo/models/直下に書き出されることがあるため、models/配下は
+# *.ptファイルだけを再包含し、そうした学習ログ用のサブディレクトリは除外したままにする。
+!data/yolo/
+data/yolo/*
+!data/yolo/models/
+data/yolo/models/*
+!data/yolo/models/*.pt
+
 # YOLOの学習成果物・自動ダウンロードされる事前学習済み重み
 # (train_yolo_pose.pyが/workspace=edge/workspace直下に生成・取得する)
 edge/workspace/runs/
